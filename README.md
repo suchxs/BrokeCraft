@@ -1,8 +1,16 @@
 # Bootleg Allstars Arena
 Sekiro-based Multiplayer Unity Game
 
+Unity Files are inside .\Moonveil
 
-To do: https://www.notion.so/269f56649b0f8025aba1d6a6067daf67?v=269f56649b0f81238e8c000ce48bc40d&source=copy_link
+
+## Commit Rules
+- No Commiting Directly to main (create your own branch)
+- Pull Requests must be approved by one person
+- Update Notion file once you are "finished" with your tasks
 
 
--- Update This Once Full Game is Published --
+
+
+
+> Update Readme once Project is complete
