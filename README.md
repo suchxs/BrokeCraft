@@ -1,4 +1,4 @@
-# Bootleg Allstars Arena
+# Bootleg Arena
 Sekiro-based Multiplayer Unity Game
 
 Unity Files are inside .\Moonveil
