@@ -1,8 +1,7 @@
-# Bootleg Arena
-Sekiro-based Multiplayer Unity Game
+# Bootleg Arena (Project MoonVeil)
+1 v 1 Parry-based Combat Multiplayer Game (Inspired by Sekiro's Unique Combat System) Made in Unity 
 
-Unity Files are inside .\Moonveil
-
+Unity Files are inside .\MoonVeil
 
 ## Commit Rules
 - No Commiting Directly to main (create your own branch)
