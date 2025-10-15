@@ -11,6 +11,7 @@ public static class VoxelData
 
     public static readonly Vector3[] voxelVerts = new Vector3[8]
     {
+        // 0 - 7 Vertices
         new Vector3(0.0f, 0.0f, 0.0f),
         new Vector3(1.0f, 0.0f, 0.0f),
         new Vector3(1.0f, 1.0f, 0.0f),
@@ -23,12 +24,12 @@ public static class VoxelData
 
     public static readonly Vector3[] faceChecks = new Vector3[6] // Voxel Adjacent of voxelTris to check if it's visible to player
     {
-        new Vector3(0.0f, 0.0f, -1.0f),
-        new Vector3(0.0f, 0.0f, 1.0f),
-        new Vector3(0.0f, 1.0f, 0.0f),
-        new Vector3(0.0f, -1.0f, 0.0f),
-        new Vector3(-1.0f, 0.0f, 0.0f),
-        new Vector3(1.0f, 0.0f, 0.0f),
+        new Vector3(0.0f, 0.0f, -1.0f), // Back
+        new Vector3(0.0f, 0.0f, 1.0f),  // Front
+        new Vector3(0.0f, 1.0f, 0.0f),  // Top
+        new Vector3(0.0f, -1.0f, 0.0f), // Bottom
+        new Vector3(-1.0f, 0.0f, 0.0f), // Left
+        new Vector3(1.0f, 0.0f, 0.0f),  // Right
     };
 
     // data from Mojang themselves lol
