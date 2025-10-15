@@ -1,22 +1,28 @@
 using NUnit.Framework;
-using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using UnityEngine;
+using static UnityEditor.Searcher.SearcherWindow.Alignment;
 
 public class Chunk : MonoBehaviour
 {
     public MeshRenderer meshRenderer;
     public MeshFilter meshFilter;
 
+    int vertexIndex = 0;
+    List<Vector3> vertices = new List<Vector3>();
+    List<int> triangles = new List<int>();
+    List<Vector2> uvs = new List<Vector2>();
 
     private void Start()
     {
-        int vertexIndex = 0;
-        List<Vector3> vertices = new List<Vector3> ();
-        List<int> triangles = new List<int> ();
-        List<Vector2> uvs = new List<Vector2> ();
+        AddVoxelDataToChunk();
+        CreateMesh();
 
+    }
 
+    void AddVoxelDataToChunk ()
+    {
         for (int face = 0; face < 6; face++)
         {
             for (int i = 0; i < 6; i++)
@@ -28,14 +34,16 @@ public class Chunk : MonoBehaviour
                 vertexIndex++;
             }
         }
+    }
 
+    void CreateMesh ()
+    {
+        Mesh mesh = new Mesh();
+        mesh.vertices = vertices.ToArray();
+        mesh.triangles = triangles.ToArray();
+        mesh.uv = uvs.ToArray();
 
-        Mesh mesh = new Mesh ();
-        mesh.vertices = vertices.ToArray ();
-        mesh.triangles = triangles.ToArray ();
-        mesh.uv = uvs.ToArray ();
-
-        mesh.RecalculateNormals ();
+        mesh.RecalculateNormals();
         meshFilter.mesh = mesh;
     }
 }
