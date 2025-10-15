@@ -16,19 +16,28 @@ public class Chunk : MonoBehaviour
 
     private void Start()
     {
-        AddVoxelDataToChunk();
+        for (int y = 0; y < VoxelData.ChunkHeight; y++)
+        {
+            for (int x = 0; x < VoxelData.ChunkWidth; x++)
+            {
+                for (int z = 0; z < VoxelData.ChunkHeight; z++)
+                {
+                    AddVoxelDataToChunk(new Vector3(x, y, z));
+                }
+            }
+        }
         CreateMesh();
 
     }
 
-    void AddVoxelDataToChunk ()
+    void AddVoxelDataToChunk (Vector3 pos)
     {
         for (int face = 0; face < 6; face++)
         {
             for (int i = 0; i < 6; i++)
             {
                 int triIndex = VoxelData.voxelTris[face][i];
-                vertices.Add(VoxelData.voxelVerts[triIndex]);
+                vertices.Add(VoxelData.voxelVerts[triIndex] + pos);
                 triangles.Add(vertexIndex);
                 uvs.Add(VoxelData.voxelUvs[triIndex % 4]); // map 0-3 repeatedly
                 vertexIndex++;
