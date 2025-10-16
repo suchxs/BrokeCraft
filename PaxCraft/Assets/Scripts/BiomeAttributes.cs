@@ -7,9 +7,10 @@ public class BiomeAttributes
 {
     public string biomeName;
     
-    [Header("Terrain Properties")]
-    public int terrainHeight = 64;
-    public float terrainScale = 0.005f;
+    [Header("Terrain Properties - Sebastian Lague Style")]
+    [Tooltip("Height multiplier (0-1). 0 = low terrain (valleys/ocean), 1 = high terrain (mountains)")]
+    [Range(0f, 1f)]
+    public float heightWeight = 0.5f;  // Only affects HEIGHT interpretation, not noise scale!
     
     [Header("Grass Color")]
     public Color grassColor = Color.green;

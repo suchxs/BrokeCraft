@@ -8,41 +8,177 @@ public class World : MonoBehaviour
     public BlockType[] blocktypes;
 
     [Header("World Generation")]
-    public int worldSizeInChunks = 16;  // Create a 16x16 chunk world (256x256 blocks)
+    public int worldSizeInChunks = 16;   // Fixed world size (16x16 = 256 chunks)
     public int seed = 1234;              // World seed for consistent generation
     public int surfaceLayer = 4;         // Depth of dirt layer below grass
     
-    [Header("Multi-Octave Noise Settings")]
-    public int octaves = 4;              // Number of noise layers (more = more detail)
-    public float persistence = 0.45f;    // How much each octave contributes (0-1)
-    public float lacunarity = 2f;        // Frequency multiplier per octave
+    [Header("Generation Settings")]
+    public bool generateAsync = true;    // Spread generation over frames (recommended)
+    public int chunksPerFrame = 5;       // How many chunks to generate per frame if async
+    
+    [Header("FBM (Fractal Brownian Motion) Settings - Sebastian Lague Style")]
+    [Tooltip("Global noise scale - affects the 'zoom' of terrain features. LOWER = larger features")]
+    public float noiseScale = 0.003f;    // ONE consistent scale for the entire world!
+    
+    [Tooltip("Number of noise layers to combine. More = more detail but slower")]
+    [Range(1, 8)]
+    public int octaves = 4;
+    
+    [Tooltip("How much each octave contributes (amplitude multiplier). Lower = smoother terrain")]
+    [Range(0.1f, 0.9f)]
+    public float persistence = 0.5f;
+    
+    [Tooltip("Frequency multiplier per octave. 2.0 is standard for FBM")]
+    [Range(1.5f, 3.0f)]
+    public float lacunarity = 2f;
+    
+    [Header("Terrain Shaping")]
+    [Tooltip("Base terrain height (Y level) - where flat areas will be")]
+    public int baseTerrainHeight = 64;
+    
+    [Tooltip("Curve to shape terrain height (0-1 input → 0-1 output). Makes valleys/peaks more dramatic")]
+    public AnimationCurve heightCurve = AnimationCurve.Linear(0, 0, 1, 1);
+    
+    [Tooltip("Maximum height variation from base (in blocks) - total possible height range")]
+    public int maxHeightVariation = 80;
+    
+    [Header("Biome Blending")]
+    [Tooltip("Radius in blocks to sample for biome blending. Larger = smoother transitions (6-8 recommended)")]
+    [Range(1, 16)]
+    public int biomeBlendRadius = 8;  // Increased from 4 for smoother transitions
+    
+    [Tooltip("Use smooth interpolation for biome transitions (prevents walls)")]
+    public bool useSmoothBlending = true;
     
     [Header("Biome Settings")]
-    public float biomeScale = 0.001f;    // LOWER = LARGER biomes, smoother transitions
+    [Tooltip("Biome noise scale - LOWER = LARGER biomes with smoother transitions (0.0005-0.002)")]
+    public float biomeScale = 0.0003f;   // Large biomes for seamless transitions
+    
     public BiomeAttributes[] biomes;     // Array of biome configurations
 
     // Dictionary to store all chunks by their coordinates
     Dictionary<ChunkCoord, Chunk> chunks = new Dictionary<ChunkCoord, Chunk>();
+    
+    // Generation queue for async mode
+    private Queue<ChunkCoord> chunkQueue = new Queue<ChunkCoord>();
+    private bool isGenerating = false;
 
     void Start()
     {
         // Ensure World is at origin for proper chunk positioning
         transform.position = Vector3.zero;
         
-        GenerateWorld();
+        // Generate static world
+        if (generateAsync)
+            StartCoroutine(GenerateWorldAsync());
+        else
+            GenerateWorldImmediate();
     }
     
     void Awake()
     {
         // Also set in Awake to ensure it's at origin before anything else
         transform.position = Vector3.zero;
+        
+        // Initialize height curve if not set (creates dramatic terrain like Sebastian Lague)
+        InitializeHeightCurve();
+        
+        // OPTIMIZATION: Add ChunkOptimizer component if not present
+        if (GetComponent<ChunkOptimizer>() == null)
+        {
+            gameObject.AddComponent<ChunkOptimizer>();
+            Debug.Log("[World] ChunkOptimizer added for performance optimization");
+        }
+        
+        // Add debug overlays if not present
+        if (FindObjectOfType<DebugConsole>() == null)
+        {
+            gameObject.AddComponent<DebugConsole>();
+            Debug.Log("[World] DebugConsole added (F1)");
+        }
+        
+        if (FindObjectOfType<ChunkDebugOverlay>() == null)
+        {
+            gameObject.AddComponent<ChunkDebugOverlay>();
+            Debug.Log("[World] ChunkDebugOverlay added (F3)");
+        }
+    }
+    
+    // Initialize a nice terrain curve if not already set
+    void InitializeHeightCurve()
+    {
+        // If curve has default values (2 keys, linear), replace with better curve
+        if (heightCurve == null || heightCurve.keys.Length <= 2)
+        {
+            heightCurve = new AnimationCurve();
+            
+            // MINECRAFT-STYLE CURVE: Gentle slopes, dramatic peaks
+            // This curve creates realistic terrain with smooth valleys and towering mountains
+            heightCurve.AddKey(0.0f, 0.0f);    // Deep valleys/ocean floor
+            heightCurve.AddKey(0.2f, 0.05f);   // Very gentle rise
+            heightCurve.AddKey(0.4f, 0.2f);    // Plains/gentle hills
+            heightCurve.AddKey(0.6f, 0.45f);   // Hills start rising
+            heightCurve.AddKey(0.75f, 0.7f);   // Mountains rise faster
+            heightCurve.AddKey(0.9f, 0.9f);    // Steep mountain slopes
+            heightCurve.AddKey(1.0f, 1.0f);    // Towering peaks
+            
+            Debug.Log("[World] Initialized Minecraft-style terrain height curve");
+        }
+    }
+    
+    // Smooth interpolation function (matches Chunk.cs)
+    float SmoothStep(float edge0, float edge1, float x)
+    {
+        float t = Mathf.Clamp01((x - edge0) / (edge1 - edge0));
+        return t * t * (3f - 2f * t);
+    }
+    
+    // SEBASTIAN LAGUE'S APPROACH: Generate consistent FBM noise across entire world
+    // This is the ONLY noise function - it returns the same value for the same (x,z) everywhere
+    public float GenerateNoise(int x, int z)
+    {
+        float amplitude = 1f;
+        float frequency = noiseScale;  // ONE consistent scale for the entire world!
+        float noiseHeight = 0f;
+        float maxPossibleHeight = 0f;
+        
+        // Calculate max possible height for normalization (Sebastian Lague's approach)
+        float tempAmplitude = 1f;
+        for (int i = 0; i < octaves; i++)
+        {
+            maxPossibleHeight += tempAmplitude;
+            tempAmplitude *= persistence;
+        }
+        
+        // Layer multiple octaves of Perlin noise (FBM)
+        for (int i = 0; i < octaves; i++)
+        {
+            // Calculate coordinates with seed offset
+            float xCoord = (x + seed) * frequency;
+            float zCoord = (z + seed) * frequency;
+            
+            // Get Perlin noise value (-1 to 1 range)
+            float perlinValue = Mathf.PerlinNoise(xCoord, zCoord) * 2 - 1;
+            
+            // Add weighted noise
+            noiseHeight += perlinValue * amplitude;
+            
+            // Adjust for next octave
+            amplitude *= persistence;
+            frequency *= lacunarity;
+        }
+        
+        // Normalize to 0-1 range using max possible height
+        float normalized = (noiseHeight + maxPossibleHeight) / (2f * maxPossibleHeight);
+        return Mathf.Clamp01(normalized);
     }
 
-    void GenerateWorld()
+    // Generate entire world immediately (blocking)
+    void GenerateWorldImmediate()
     {
-        Debug.Log($"Generating world: {worldSizeInChunks}x{worldSizeInChunks} chunks");
-
-        // Step 1: Create all chunks and populate voxel data
+        Debug.Log($"[World] Generating {worldSizeInChunks}x{worldSizeInChunks} world immediately...");
+        
+        // Step 1: Create all chunks
         for (int x = 0; x < worldSizeInChunks; x++)
         {
             for (int z = 0; z < worldSizeInChunks; z++)
@@ -50,24 +186,63 @@ public class World : MonoBehaviour
                 CreateChunk(x, z);
             }
         }
-
-        Debug.Log($"Created {chunks.Count} chunks, generating meshes...");
-
-        // Step 2: Generate meshes after all chunks exist (so neighbors can be checked)
-        foreach (Chunk chunk in chunks.Values)
-        {
-            chunk.GenerateMesh();
-        }
-
-        Debug.Log($"World generation complete!");
         
-        // Wait a frame for colliders to be ready, then spawn player
-        StartCoroutine(SpawnPlayerDelayed());
+        Debug.Log($"[World] Created {chunks.Count} chunks, done!");
+        
+        // Spawn player after generation
+        StartCoroutine(SpawnPlayer());
     }
     
-    IEnumerator SpawnPlayerDelayed()
+    // Generate world spread over multiple frames (recommended)
+    IEnumerator GenerateWorldAsync()
     {
-        // Wait for physics to update colliders
+        Debug.Log($"[World] Generating {worldSizeInChunks}x{worldSizeInChunks} world (async, {chunksPerFrame} per frame)...");
+        isGenerating = true;
+        
+        // Queue all chunks
+        for (int x = 0; x < worldSizeInChunks; x++)
+        {
+            for (int z = 0; z < worldSizeInChunks; z++)
+            {
+                chunkQueue.Enqueue(new ChunkCoord(x, z));
+            }
+        }
+        
+        int totalChunks = chunkQueue.Count;
+        int generated = 0;
+        
+        // Generate chunks over multiple frames
+        while (chunkQueue.Count > 0)
+        {
+            int chunksThisFrame = 0;
+            
+            while (chunkQueue.Count > 0 && chunksThisFrame < chunksPerFrame)
+            {
+                ChunkCoord coord = chunkQueue.Dequeue();
+                CreateChunk(coord.x, coord.z);
+                chunksThisFrame++;
+                generated++;
+            }
+            
+            // Progress log every 50 chunks
+            if (generated % 50 == 0)
+            {
+                Debug.Log($"[World] Progress: {generated}/{totalChunks} chunks ({(float)generated/totalChunks*100:F0}%)");
+            }
+            
+            yield return null; // Wait for next frame
+        }
+        
+        isGenerating = false;
+        Debug.Log($"[World] Generation complete! {chunks.Count} chunks created.");
+        
+        // Spawn player after generation
+        StartCoroutine(SpawnPlayer());
+    }
+    
+    // Spawn player at world center
+    IEnumerator SpawnPlayer()
+    {
         yield return new WaitForSeconds(0.5f);
         
         PlayerController player = FindObjectOfType<PlayerController>();
@@ -78,57 +253,79 @@ public class World : MonoBehaviour
             int centerX = Mathf.FloorToInt(worldSize / 2f);
             int centerZ = Mathf.FloorToInt(worldSize / 2f);
             
-            // Get ACTUAL terrain height at spawn position using Perlin noise
+            // Get terrain height at spawn
             int terrainHeight = GetTerrainHeightAt(centerX, centerZ);
             
             // Spawn player 5 blocks above terrain
             Vector3 spawnPosition = new Vector3(centerX, terrainHeight + 5, centerZ);
             player.transform.position = spawnPosition;
             
-            Debug.Log($"Player spawned at: {spawnPosition} (Terrain height: {terrainHeight})");
-            Debug.Log("Terrain colliders ready!");
+            Debug.Log($"[World] Player spawned at: {spawnPosition} (center of {worldSizeInChunks}x{worldSizeInChunks} world)");
         }
     }
     
-    // Calculate actual terrain height at a specific position (same as chunk generation)
+    // Calculate actual terrain height at a specific position (matches chunk generation exactly)
     int GetTerrainHeightAt(int x, int z)
     {
-        BiomeAttributes biome = GetBiome(x, z);
+        // SEBASTIAN LAGUE'S APPROACH: Same logic as Chunk.cs
         
-        // Use biome-specific values or defaults
-        float scale = biome != null ? biome.terrainScale : 0.005f;
-        int baseHeight = biome != null ? biome.terrainHeight : 64;
+        // Step 1: Generate consistent noise
+        float baseNoise = GenerateNoise(x, z);
         
-        float amplitude = 1f;
-        float frequency = scale;
-        float noiseHeight = 0f;
-        float maxValue = 0f;
-
-        // Layer multiple octaves of Perlin noise (same as Chunk.cs)
-        for (int i = 0; i < octaves; i++)
-        {
-            float xCoord = (x + seed) * frequency;
-            float zCoord = (z + seed) * frequency;
-            float perlinValue = Mathf.PerlinNoise(xCoord, zCoord) * 2 - 1;
-            
-            noiseHeight += perlinValue * amplitude;
-            maxValue += amplitude;
-            
-            amplitude *= persistence;
-            frequency *= lacunarity;
-        }
-
-        // Normalize to 0-1 range
-        noiseHeight = (noiseHeight + maxValue) / (maxValue * 2);
-
-        // Convert to terrain height
-        int heightVariation = 40;
-        int height = Mathf.FloorToInt(baseHeight + (noiseHeight * heightVariation));
-
-        // Clamp to valid range
+        // Step 2: Get blended biome height multiplier
+        float blendedHeightMultiplier = GetBlendedHeightMultiplier(x, z);
+        
+        // Step 3: Apply height curve
+        float curvedHeight = heightCurve.Evaluate(baseNoise);
+        
+        // Step 4: Apply biome multiplier
+        float finalHeight = curvedHeight * blendedHeightMultiplier;
+        
+        // Step 5: Convert to blocks
+        int height = Mathf.FloorToInt(baseTerrainHeight + (finalHeight * maxHeightVariation));
         height = Mathf.Clamp(height, 1, VoxelData.ChunkHeight - 1);
-
+        
         return height;
+    }
+    
+    // Get blended height multiplier from nearby biomes (matches Chunk.cs exactly)
+    float GetBlendedHeightMultiplier(int x, int z)
+    {
+        float totalMultiplier = 0f;
+        float totalWeight = 0f;
+        
+        // Sample biomes in a radius
+        for (int offsetX = -biomeBlendRadius; offsetX <= biomeBlendRadius; offsetX++)
+        {
+            for (int offsetZ = -biomeBlendRadius; offsetZ <= biomeBlendRadius; offsetZ++)
+            {
+                float distance = Mathf.Sqrt(offsetX * offsetX + offsetZ * offsetZ);
+                
+                if (distance > biomeBlendRadius)
+                    continue;
+                
+                // Smooth falloff (inverse square with smoothstep)
+                float normalizedDist = distance / biomeBlendRadius;
+                float weight = 1f - SmoothStep(0f, 1f, normalizedDist);
+                weight = weight * weight; // Square for extra smoothness
+                
+                // Get biome height weight at this position
+                BiomeAttributes biome = GetBiome(x + offsetX, z + offsetZ);
+                if (biome != null)
+                {
+                    totalMultiplier += biome.heightWeight * weight;
+                    totalWeight += weight;
+                }
+            }
+        }
+        
+        // Normalize
+        if (totalWeight > 0.001f)
+        {
+            return totalMultiplier / totalWeight;
+        }
+        
+        return 0.5f; // Default mid-level height
     }
 
     void CreateChunk(int x, int z)
@@ -157,6 +354,9 @@ public class World : MonoBehaviour
 
         // Store in dictionary
         chunks[coord] = chunk;
+        
+        // Generate mesh immediately
+        chunk.GenerateMesh();
     }
 
     // Get chunk at specific coordinate (for neighbor access later)
@@ -165,6 +365,22 @@ public class World : MonoBehaviour
         if (chunks.ContainsKey(coord))
             return chunks[coord];
         return null;
+    }
+    
+    // OPTIMIZATION: Expose all chunks for optimizer
+    public IEnumerable<Chunk> GetAllChunks()
+    {
+        return chunks.Values;
+    }
+    
+    // Get world generation stats for debug UI
+    public string GetWorldStats()
+    {
+        int loadedChunks = chunks.Count;
+        int maxChunks = worldSizeInChunks * worldSizeInChunks;
+        int queuedChunks = chunkQueue.Count;
+        
+        return $"World: {worldSizeInChunks}x{worldSizeInChunks} | Chunks: {loadedChunks}/{maxChunks} | Queue: {queuedChunks}";
     }
 
     // Get biome at world position (with smooth blending)

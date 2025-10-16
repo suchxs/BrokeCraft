@@ -36,17 +36,19 @@ public class ChunkSection : MonoBehaviour
     }
 
     // Check if this section is completely empty (all air blocks)
+    // OPTIMIZED: Early exit on first non-air block found
     public bool IsEmpty()
     {
+        // Check in optimal order (most likely to find blocks faster)
         for (int y = 0; y < VoxelData.SectionHeight; y++)
         {
+            int chunkY = sectionYOffset + y;
             for (int x = 0; x < VoxelData.ChunkWidth; x++)
             {
                 for (int z = 0; z < VoxelData.ChunkWidth; z++)
                 {
-                    // Check actual Y position in chunk
-                    byte blockID = parentChunk.GetVoxel(x, sectionYOffset + y, z);
-                    if (blockID != 0) // Not air
+                    // Early exit - return false immediately on first block found
+                    if (parentChunk.voxelMap[x, chunkY, z] != 0)
                         return false;
                 }
             }
@@ -151,15 +153,26 @@ public class ChunkSection : MonoBehaviour
 
     void CreateMesh()
     {
-        // Don't create mesh if empty
+        // OPTIMIZATION: If no vertices, disable renderer and collider entirely
         if (vertices.Count == 0)
         {
             if (meshFilter.mesh != null)
                 meshFilter.mesh.Clear();
+            
+            // Disable components to save performance
+            if (meshRenderer != null)
+                meshRenderer.enabled = false;
+            if (meshCollider != null)
+                meshCollider.enabled = false;
+            
             return;
         }
 
-        // Reuse existing mesh if available
+        // Enable renderer if we have mesh data
+        if (meshRenderer != null)
+            meshRenderer.enabled = true;
+
+        // Reuse existing mesh if available (prevents GC)
         Mesh mesh = meshFilter.mesh;
         if (mesh == null)
         {
@@ -170,15 +183,16 @@ public class ChunkSection : MonoBehaviour
 
         mesh.Clear();
 
-        // Use SetVertices/SetTriangles to avoid allocations
+        // OPTIMIZATION: Use SetVertices/SetTriangles to avoid allocations
         mesh.SetVertices(vertices);
         mesh.SetTriangles(triangles, 0);
         mesh.SetUVs(0, uvs);
         mesh.SetColors(colors);  // Set vertex colors for biome tinting
 
+        // OPTIMIZATION: RecalculateNormals is expensive, but needed for lighting
         mesh.RecalculateNormals();
         
-        // Update collider with new mesh (CRITICAL for collision)
+        // Update collider with new mesh (ALWAYS enable for proper collision)
         if (meshCollider != null)
         {
             meshCollider.sharedMesh = null;  // Clear old mesh first
@@ -187,10 +201,7 @@ public class ChunkSection : MonoBehaviour
                                          | MeshColliderCookingOptions.EnableMeshCleaning 
                                          | MeshColliderCookingOptions.WeldColocatedVertices;
             meshCollider.sharedMesh = mesh;  // Assign new mesh
-            
-            // Force physics to update
-            meshCollider.enabled = false;
-            meshCollider.enabled = true;
+            meshCollider.enabled = true;     // Always enable (optimizer will manage if needed)
         }
     }
 

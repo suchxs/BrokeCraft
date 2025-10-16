@@ -326,79 +326,44 @@ MonoBehaviour:
     bottomFaceTexture: 886
     leftFaceTexture: 886
     rightFaceTexture: 886
-  worldSizeInChunks: 16
+  worldSizeInChunks: 64
   seed: 1234123
   surfaceLayer: 4
-  generateAsync: 1
-  chunksPerFrame: 5
   octaves: 4
   persistence: 0.45
   lacunarity: 2
-  baseTerrainHeight: 64
-  heightCurve:
-    serializedVersion: 2
-    m_Curve:
-    - serializedVersion: 3
-      time: 0
-      value: 0
-      inSlope: 0
-      outSlope: 1
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    - serializedVersion: 3
-      time: 1
-      value: 1
-      inSlope: 1
-      outSlope: 0
-      tangentMode: 0
-      weightedMode: 0
-      inWeight: 0
-      outWeight: 0
-    m_PreInfinity: 2
-    m_PostInfinity: 2
-    m_RotationOrder: 4
-  maxHeightVariation: 80
-  biomeBlendRadius: 8
-  useSmoothBlending: 1
-  biomeScale: 0.005
+  biomeScale: 0.001
   biomes:
   - biomeName: Plains
-    heightWeight: 0.35
-    heightVariation: 25
+    terrainHeight: 64
     terrainScale: 0.005
     grassColor: {r: 0.5686275, g: 0.7411765, b: 0.34901962, a: 0}
     surfaceBlock: 3
     subSurfaceBlock: 4
     useGrassColoring: 1
   - biomeName: Forest
-    heightWeight: 0.5
-    heightVariation: 40
+    terrainHeight: 66
     terrainScale: 0.006
     grassColor: {r: 0.4745098, g: 0.7529412, b: 0.3529412, a: 0}
     surfaceBlock: 3
     subSurfaceBlock: 4
     useGrassColoring: 1
   - biomeName: Desert
-    heightWeight: 0.42
-    heightVariation: 30
+    terrainHeight: 62
     terrainScale: 0.004
     grassColor: {r: 0, g: 0, b: 0, a: 0}
     surfaceBlock: 5
     subSurfaceBlock: 5
     useGrassColoring: 0
   - biomeName: Mountains
-    heightWeight: 0.88
-    heightVariation: 75
+    terrainHeight: 80
     terrainScale: 0.008
     grassColor: {r: 0.6039216, g: 0.74509805, b: 0.29411766, a: 0}
     surfaceBlock: 3
     subSurfaceBlock: 4
     useGrassColoring: 1
   - biomeName: Snowy Tundra
-    heightWeight: 0.5
-    heightVariation: 40
+    terrainHeight: 64
     terrainScale: 0.004
     grassColor: {r: 0, g: 0, b: 0, a: 0}
     surfaceBlock: 6

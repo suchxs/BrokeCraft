@@ -15,6 +15,9 @@ public class Chunk : MonoBehaviour
     public ChunkCoord coord;
 
     World world;
+    
+    // Track if this chunk has been meshed (for neighbor updates)
+    private bool isMeshed = false;
 
     // Initialize chunk with world reference
     public void Initialize(World _world)
@@ -28,6 +31,45 @@ public class Chunk : MonoBehaviour
     {
         CreateSections();
         GenerateAllSections();
+        isMeshed = true;
+        
+        // Notify neighbors to update their edges (fixes boundary rendering)
+        NotifyNeighborsToUpdate();
+    }
+    
+    // Regenerate mesh (for when neighbors load and we need to update edges)
+    public void RegenerateMesh()
+    {
+        if (!isMeshed) return; // Don't regenerate if never meshed
+        
+        // Only regenerate if we have sections
+        if (sections != null && sections.Length > 0)
+        {
+            GenerateAllSections();
+        }
+    }
+    
+    // Tell neighboring chunks to update their meshes (fixes edge faces)
+    void NotifyNeighborsToUpdate()
+    {
+        // Check all 4 horizontal neighbors
+        ChunkCoord[] neighborCoords = new ChunkCoord[]
+        {
+            new ChunkCoord(coord.x + 1, coord.z),
+            new ChunkCoord(coord.x - 1, coord.z),
+            new ChunkCoord(coord.x, coord.z + 1),
+            new ChunkCoord(coord.x, coord.z - 1)
+        };
+        
+        foreach (ChunkCoord neighborCoord in neighborCoords)
+        {
+            Chunk neighbor = world.GetChunk(neighborCoord);
+            if (neighbor != null && neighbor.isMeshed)
+            {
+                // Neighbor exists and is meshed - tell it to update
+                neighbor.RegenerateMesh();
+            }
+        }
     }
 
     // Public method for sections to access voxel data (supports cross-chunk lookups)
@@ -46,7 +88,7 @@ public class Chunk : MonoBehaviour
         return voxelMap[x, y, z];
     }
 
-    // Get voxel from neighboring chunk
+    // Get voxel from neighboring chunk (MINECRAFT-STYLE FACE CULLING)
     byte GetVoxelFromNeighbor(int x, int y, int z)
     {
         // Calculate which neighboring chunk to check
@@ -80,107 +122,158 @@ public class Chunk : MonoBehaviour
         ChunkCoord neighborCoord = new ChunkCoord(neighborChunkX, neighborChunkZ);
         Chunk neighborChunk = world.GetChunk(neighborCoord);
 
-        // If neighbor exists, get its voxel
+        // MINECRAFT LOGIC: If neighbor exists, get its actual voxel
         if (neighborChunk != null)
+        {
             return neighborChunk.voxelMap[x, y, z];
+        }
 
-        // No neighbor chunk = air (edge of world)
+        // CRITICAL: Neighbor doesn't exist (not generated yet, or world edge)
+        // Underground: Assume solid (don't render face) - MASSIVE performance boost!
+        // This prevents rendering thousands of hidden underground faces
+        if (y <= world.baseTerrainHeight)
+        {
+            return 2; // Stone (solid) - face won't render
+        }
+        
+        // Above ground: Assume air (render face) - shows chunk edge above terrain
         return 0;
     }
 
     void PopulateVoxelMap()
     {
-        // Generate terrain using Perlin noise with biomes
+        // SEBASTIAN LAGUE APPROACH: Generate heightmap first, then convert to voxels
+        // This ensures consistent noise across the entire terrain
+        
+        // Cache biomes per column
+        BiomeAttributes[,] biomeCache = new BiomeAttributes[VoxelData.ChunkWidth, VoxelData.ChunkWidth];
+        int[,] heightCache = new int[VoxelData.ChunkWidth, VoxelData.ChunkWidth];
+        
+        // Pre-calculate heights for entire chunk
         for (int x = 0; x < VoxelData.ChunkWidth; x++)
         {
             for (int z = 0; z < VoxelData.ChunkWidth; z++)
             {
-                // Calculate global block position
                 int globalX = x + (coord.x * VoxelData.ChunkWidth);
                 int globalZ = z + (coord.z * VoxelData.ChunkWidth);
-
-                // Get biome for this position
-                BiomeAttributes biome = world.GetBiome(globalX, globalZ);
-
-                // Get terrain height using Perlin noise (biome-specific)
-                int terrainHeight = GetTerrainHeight(globalX, globalZ, biome);
+                
+                // Get biome (for block types only)
+                biomeCache[x, z] = world.GetBiome(globalX, globalZ);
+                
+                // Generate height using Sebastian Lague's approach
+                heightCache[x, z] = GetTerrainHeight(globalX, globalZ);
+            }
+        }
+        
+        // Generate terrain using cached values
+        for (int x = 0; x < VoxelData.ChunkWidth; x++)
+        {
+            for (int z = 0; z < VoxelData.ChunkWidth; z++)
+            {
+                BiomeAttributes biome = biomeCache[x, z];
+                int terrainHeight = heightCache[x, z];
 
                 // Fill column from bottom to terrain height
                 for (int y = 0; y < VoxelData.ChunkHeight; y++)
                 {
-                    // Block type selection based on height
                     if (y == 0)
                     {
-                        // Bedrock at bottom
-                        voxelMap[x, y, z] = 1;
+                        voxelMap[x, y, z] = 1; // Bedrock
                     }
                     else if (y <= terrainHeight - world.surfaceLayer)
                     {
-                        // Stone (below dirt layer)
-                        voxelMap[x, y, z] = 2;
+                        voxelMap[x, y, z] = 2; // Stone
                     }
                     else if (y < terrainHeight)
                     {
-                        // Subsurface layer (dirt or biome-specific)
                         voxelMap[x, y, z] = (byte)(biome != null ? biome.subSurfaceBlock : 4);
                     }
                     else if (y == terrainHeight)
                     {
-                        // Surface block (grass or biome-specific)
                         voxelMap[x, y, z] = (byte)(biome != null ? biome.surfaceBlock : 3);
                     }
                     else
                     {
-                        // Air above terrain
-                        voxelMap[x, y, z] = 0;
+                        voxelMap[x, y, z] = 0; // Air
                     }
                 }
             }
         }
     }
 
-    // Calculate terrain height using multi-octave Perlin noise (biome-aware)
-    int GetTerrainHeight(int x, int z, BiomeAttributes biome)
+    // SEBASTIAN LAGUE'S APPROACH: Consistent noise, biomes only affect interpretation
+    int GetTerrainHeight(int x, int z)
     {
-        // Use biome-specific values or defaults
-        float scale = biome != null ? biome.terrainScale : 0.005f;
-        int baseHeight = biome != null ? biome.terrainHeight : 64;
+        // Step 1: Generate ONE consistent noise value for this position
+        // This noise is the SAME across the entire world - no frequency changes!
+        float baseNoise = world.GenerateNoise(x, z);
         
-        float amplitude = 1f;
-        float frequency = scale;
-        float noiseHeight = 0f;
-        float maxValue = 0f;  // Used for normalizing
-
-        // Layer multiple octaves of Perlin noise
-        for (int i = 0; i < world.octaves; i++)
-        {
-            // Calculate coordinates with seed offset
-            float xCoord = (x + world.seed) * frequency;
-            float zCoord = (z + world.seed) * frequency;
-
-            // Get Perlin noise value (-1 to 1 range, centered)
-            float perlinValue = Mathf.PerlinNoise(xCoord, zCoord) * 2 - 1;
-
-            // Add to total height
-            noiseHeight += perlinValue * amplitude;
-            maxValue += amplitude;
-
-            // Adjust for next octave
-            amplitude *= world.persistence;  // Decrease influence
-            frequency *= world.lacunarity;   // Increase detail
-        }
-
-        // Normalize to 0-1 range
-        noiseHeight = (noiseHeight + maxValue) / (maxValue * 2);
-
-        // Convert to terrain height (use biome's height range)
-        int heightVariation = 40; // Can make this biome-specific too
-        int height = Mathf.FloorToInt(baseHeight + (noiseHeight * heightVariation));
-
-        // Clamp to valid range
+        // Step 2: Get blended biome HEIGHT MULTIPLIERS (not noise parameters!)
+        float blendedHeightMultiplier = GetBlendedHeightMultiplier(x, z);
+        
+        // Step 3: Apply height curve to noise (Sebastian Lague's technique)
+        float curvedHeight = world.heightCurve.Evaluate(baseNoise);
+        
+        // Step 4: Apply biome height multiplier to the curved noise
+        // This is where biomes affect the terrain - they scale the HEIGHT, not the noise!
+        float finalHeight = curvedHeight * blendedHeightMultiplier;
+        
+        // Step 5: Convert to block height
+        int height = Mathf.FloorToInt(world.baseTerrainHeight + (finalHeight * world.maxHeightVariation));
         height = Mathf.Clamp(height, 1, VoxelData.ChunkHeight - 1);
-
+        
         return height;
+    }
+    
+    // Get blended height multiplier from nearby biomes
+    // This is the ONLY thing biomes affect - they don't change the noise itself!
+    float GetBlendedHeightMultiplier(int x, int z)
+    {
+        float totalMultiplier = 0f;
+        float totalWeight = 0f;
+        
+        int blendRadius = world.biomeBlendRadius;
+        
+        // Sample biomes in a radius
+        for (int offsetX = -blendRadius; offsetX <= blendRadius; offsetX++)
+        {
+            for (int offsetZ = -blendRadius; offsetZ <= blendRadius; offsetZ++)
+            {
+                float distance = Mathf.Sqrt(offsetX * offsetX + offsetZ * offsetZ);
+                
+                if (distance > blendRadius)
+                    continue;
+                
+                // Smooth falloff (inverse square with smoothstep)
+                float normalizedDist = distance / blendRadius;
+                float weight = 1f - SmoothStep(0f, 1f, normalizedDist);
+                weight = weight * weight; // Square for extra smoothness
+                
+                // Get biome height weight at this position
+                BiomeAttributes biome = world.GetBiome(x + offsetX, z + offsetZ);
+                if (biome != null)
+                {
+                    // Biomes only provide HEIGHT MULTIPLIERS (0-1 range)
+                    totalMultiplier += biome.heightWeight * weight;
+                    totalWeight += weight;
+                }
+            }
+        }
+        
+        // Normalize
+        if (totalWeight > 0.001f)
+        {
+            return totalMultiplier / totalWeight;
+        }
+        
+        return 0.5f; // Default mid-level height
+    }
+    
+    // Smooth interpolation function (like GLSL smoothstep)
+    float SmoothStep(float edge0, float edge1, float x)
+    {
+        float t = Mathf.Clamp01((x - edge0) / (edge1 - edge0));
+        return t * t * (3f - 2f * t);
     }
 
     void CreateSections()
