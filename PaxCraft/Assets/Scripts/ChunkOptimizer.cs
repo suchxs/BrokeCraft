@@ -186,7 +186,8 @@ public class ChunkOptimizer : MonoBehaviour
         return $"Chunks: {visibleChunks}/{totalChunks} visible";
     }
     
-    // Debug visualization (collider distance circle)
+    // Debug visualization disabled (was causing red circle in scene view)
+    /*
     void OnDrawGizmos()
     {
         if (playerTransform == null)
@@ -220,5 +221,6 @@ public class ChunkOptimizer : MonoBehaviour
             Gizmos.DrawLine(point1, point2);
         }
     }
+    */
 }
 

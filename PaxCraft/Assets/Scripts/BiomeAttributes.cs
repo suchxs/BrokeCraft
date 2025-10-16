@@ -6,6 +6,7 @@ using UnityEngine;
 public class BiomeAttributes
 {
     public string biomeName;
+    public BiomeType biomeType;
     
     [Header("Terrain Properties - Sebastian Lague Style")]
     [Tooltip("Height multiplier (0-1). 0 = low terrain (valleys/ocean), 1 = high terrain (mountains)")]
@@ -23,12 +24,22 @@ public class BiomeAttributes
     public bool useGrassColoring = true;  // Enable/disable grass color tinting
 }
 
+// MINECRAFT-STYLE BIOME GRID (Temperature x Humidity)
 public enum BiomeType
 {
-    Plains,
-    Desert,
-    Forest,
-    Mountains,
-    SnowyTundra
+    // COLD ROW (Temperature 0-0.33)
+    SnowyTundra,      // Cold + Dry
+    SnowyTaiga,       // Cold + Medium
+    IceSpikes,        // Cold + Wet
+    
+    // MEDIUM ROW (Temperature 0.33-0.66)
+    Plains,           // Medium + Dry
+    Forest,           // Medium + Medium
+    Swamp,            // Medium + Wet
+    
+    // HOT ROW (Temperature 0.66-1.0)
+    Desert,           // Hot + Dry
+    Savanna,          // Hot + Medium
+    Jungle            // Hot + Wet
 }
 

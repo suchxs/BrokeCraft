@@ -20,6 +20,11 @@ public class ChunkSection : MonoBehaviour
 
     // This section's Y offset in the chunk (0, 16, 32, 48, etc.)
     public int sectionYOffset;
+    
+    // OPTIMIZATION: Delay collider generation (Minecraft-style!)
+    private bool colliderNeedsUpdate = false;
+    private Mesh cachedMesh = null;
+    private int colliderBakeFrame = -1; // Frame when collider should bake
 
     public void Initialize(Chunk _parentChunk, World _world, int _yOffset)
     {
@@ -81,6 +86,56 @@ public class ChunkSection : MonoBehaviour
 
         CreateMesh();
     }
+    
+    // THREADED MESH SYSTEM: Upload pre-generated mesh data to GPU (MAIN THREAD ONLY!)
+    public void UploadMeshData(SectionMeshData meshData)
+    {
+        // Check if mesh data is empty
+        if (meshData.vertices == null || meshData.vertices.Count == 0)
+        {
+            // Empty section - disable renderer and collider
+            if (meshRenderer != null)
+                meshRenderer.enabled = false;
+            if (meshCollider != null)
+            {
+                meshCollider.sharedMesh = null; // Clear mesh reference!
+                meshCollider.enabled = false;
+            }
+            return;
+        }
+        
+        // Enable renderer
+        if (meshRenderer != null)
+            meshRenderer.enabled = true;
+        
+        // OPTIMIZATION: Get mesh from pool (reuse instead of allocate!)
+        Mesh mesh = meshFilter.mesh;
+        if (mesh == null)
+        {
+            mesh = ChunkPool.GetMesh();
+            mesh.name = $"Section_Y{sectionYOffset}_Threaded";
+            mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt16; // 16-bit indices for smaller meshes
+            meshFilter.mesh = mesh;
+        }
+        else
+        {
+            mesh.Clear();
+        }
+        
+        // Upload mesh data to GPU (Unity API - MUST be on main thread!)
+        mesh.SetVertices(meshData.vertices);
+        mesh.SetTriangles(meshData.triangles, 0);
+        mesh.SetUVs(0, meshData.uvs);
+        mesh.SetColors(meshData.colors);
+        
+        // OPTIMIZATION: Skip normals for flat shading (Minecraft style)
+        // mesh.RecalculateNormals(); // Disabled for performance!
+        
+        // Schedule delayed collider baking
+        cachedMesh = mesh;
+        colliderBakeFrame = Time.frameCount + (gameObject.GetInstanceID() % 60) + 10;
+        colliderNeedsUpdate = true;
+    }
 
     void AddVoxelDataToSection(int x, int y, int z)
     {
@@ -90,11 +145,11 @@ public class ChunkSection : MonoBehaviour
         // Skip air blocks entirely
         if (blockID == 0) return;
 
-        // Get biome and blended grass color for this block's global position
+        // OPTIMIZATION: Get biome color (simplified - no blending for performance!)
         int globalX = x + (parentChunk.coord.x * VoxelData.ChunkWidth);
         int globalZ = z + (parentChunk.coord.z * VoxelData.ChunkWidth);
         BiomeAttributes biome = world.GetBiome(globalX, globalZ);
-        Color blockColor = world.GetBlendedGrassColor(globalX, globalZ);  // Use blended color!
+        Color blockColor = biome != null ? biome.grassColor : Color.green; // Direct color (faster!)
 
         // Local position within this section (for mesh vertices)
         // y needs to be relative to section, not chunk
@@ -163,7 +218,10 @@ public class ChunkSection : MonoBehaviour
             if (meshRenderer != null)
                 meshRenderer.enabled = false;
             if (meshCollider != null)
+            {
+                meshCollider.sharedMesh = null; // Clear mesh reference!
                 meshCollider.enabled = false;
+            }
             
             return;
         }
@@ -172,16 +230,19 @@ public class ChunkSection : MonoBehaviour
         if (meshRenderer != null)
             meshRenderer.enabled = true;
 
-        // Reuse existing mesh if available (prevents GC)
+        // OPTIMIZATION: Get mesh from pool (reuse instead of allocate!)
         Mesh mesh = meshFilter.mesh;
         if (mesh == null)
         {
-            mesh = new Mesh();
+            mesh = ChunkPool.GetMesh();
             mesh.name = $"Section_Y{sectionYOffset}";
+            mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt16; // 16-bit indices
             meshFilter.mesh = mesh;
         }
-
-        mesh.Clear();
+        else
+        {
+            mesh.Clear();
+        }
 
         // OPTIMIZATION: Use SetVertices/SetTriangles to avoid allocations
         mesh.SetVertices(vertices);
@@ -189,19 +250,50 @@ public class ChunkSection : MonoBehaviour
         mesh.SetUVs(0, uvs);
         mesh.SetColors(colors);  // Set vertex colors for biome tinting
 
-        // OPTIMIZATION: RecalculateNormals is expensive, but needed for lighting
-        mesh.RecalculateNormals();
+        // MINECRAFT OPTIMIZATION: Skip normals calculation for faster rendering
+        // (Flat shading is fine for blocky voxels!)
+        // mesh.RecalculateNormals();  // Disabled for HUGE performance boost!
         
-        // Update collider with new mesh (ALWAYS enable for proper collision)
-        if (meshCollider != null)
+        // MINECRAFT OPTIMIZATION: DELAY collider generation!
+        cachedMesh = mesh;
+        
+        // Schedule collider baking for a future frame (staggered based on instance ID)
+        colliderBakeFrame = Time.frameCount + (gameObject.GetInstanceID() % 60) + 10;
+        colliderNeedsUpdate = true;
+    }
+    
+    // OPTIMIZED: Bake colliders in a staggered manner (simple, no coroutines!)
+    void Update()
+    {
+        if (colliderNeedsUpdate && Time.frameCount >= colliderBakeFrame && cachedMesh != null)
+        {
+            BakeCollider();
+            colliderNeedsUpdate = false;
+        }
+    }
+    
+    // Bake collider mesh
+    void BakeCollider()
+    {
+        if (meshCollider != null && cachedMesh != null)
         {
             meshCollider.sharedMesh = null;  // Clear old mesh first
-            meshCollider.convex = false;     // MUST be false for terrain (non-convex)
+            meshCollider.convex = false;     // MUST be false for terrain
             meshCollider.cookingOptions = MeshColliderCookingOptions.CookForFasterSimulation 
                                          | MeshColliderCookingOptions.EnableMeshCleaning 
                                          | MeshColliderCookingOptions.WeldColocatedVertices;
-            meshCollider.sharedMesh = mesh;  // Assign new mesh
-            meshCollider.enabled = true;     // Always enable (optimizer will manage if needed)
+            meshCollider.sharedMesh = cachedMesh;  // Assign new mesh
+            meshCollider.enabled = true;
+        }
+    }
+    
+    // Return mesh to pool when section is destroyed/reused
+    public void ReturnMeshToPool()
+    {
+        if (meshFilter != null && meshFilter.mesh != null)
+        {
+            ChunkPool.ReturnMesh(meshFilter.mesh);
+            meshFilter.mesh = null;
         }
     }
 

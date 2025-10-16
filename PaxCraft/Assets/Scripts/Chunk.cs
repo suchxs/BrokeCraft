@@ -14,27 +14,60 @@ public class Chunk : MonoBehaviour
     // Chunk's position in the world grid
     public ChunkCoord coord;
 
-    World world;
+    public World world; // Public for threading system access
     
     // Track if this chunk has been meshed (for neighbor updates)
     private bool isMeshed = false;
 
-    // Initialize chunk with world reference
+    // Initialize chunk with world reference (LEGACY: for synchronous generation)
     public void Initialize(World _world)
     {
         world = _world;
-        PopulateVoxelMap();
+        PopulateVoxelMap(); // Only called for sync generation (spawn chunks)
+    }
+    
+    // Initialize from pre-generated voxel data (THREADED)
+    // voxelMap is already populated by background thread - skip PopulateVoxelMap()
+    public void InitializeFromThreadData(World _world)
+    {
+        world = _world;
+        // voxelMap already set by CreateChunkFromThreadData - skip generation!
+    }
+    
+    // Mark chunk as meshed (called after mesh upload)
+    public void MarkAsMeshed()
+    {
+        isMeshed = true;
+    }
+    
+    // Return all section meshes to pool (for chunk pooling)
+    public void ReturnMeshesToPool()
+    {
+        if (sections != null)
+        {
+            foreach (ChunkSection section in sections)
+            {
+                if (section != null)
+                {
+                    section.ReturnMeshToPool();
+                }
+            }
+        }
     }
 
     // Generate mesh (called after all chunks are initialized)
-    public void GenerateMesh()
+    public void GenerateMesh(bool notifyNeighbors = true)
     {
         CreateSections();
         GenerateAllSections();
         isMeshed = true;
         
         // Notify neighbors to update their edges (fixes boundary rendering)
-        NotifyNeighborsToUpdate();
+        // Skip during initial spawn for better performance
+        if (notifyNeighbors)
+        {
+            NotifyNeighborsToUpdate();
+        }
     }
     
     // Regenerate mesh (for when neighbors load and we need to update edges)
@@ -122,21 +155,29 @@ public class Chunk : MonoBehaviour
         ChunkCoord neighborCoord = new ChunkCoord(neighborChunkX, neighborChunkZ);
         Chunk neighborChunk = world.GetChunk(neighborCoord);
 
-        // MINECRAFT LOGIC: If neighbor exists, get its actual voxel
-        if (neighborChunk != null)
+        // MINECRAFT LOGIC: If neighbor exists AND is active, get its actual voxel
+        if (neighborChunk != null && neighborChunk.gameObject.activeInHierarchy)
         {
             return neighborChunk.voxelMap[x, y, z];
         }
 
-        // CRITICAL: Neighbor doesn't exist (not generated yet, or world edge)
-        // Underground: Assume solid (don't render face) - MASSIVE performance boost!
-        // This prevents rendering thousands of hidden underground faces
-        if (y <= world.baseTerrainHeight)
+        // CRITICAL: Neighbor doesn't exist (not generated yet, cached, or world edge)
+        // FIXED: Check ACTUAL terrain height at this position, not base height!
+        
+        // Calculate global position to check terrain height
+        int globalX = (neighborChunkX * VoxelData.ChunkWidth) + x;
+        int globalZ = (neighborChunkZ * VoxelData.ChunkWidth) + z;
+        
+        // Get actual terrain height at this exact position
+        int actualTerrainHeight = world.GetTerrainHeightAt(globalX, globalZ);
+        
+        // If we're underground at this position, assume solid (hide face)
+        if (y <= actualTerrainHeight)
         {
-            return 2; // Stone (solid) - face won't render
+            return 2; // Stone (solid) - face won't render (MASSIVE optimization!)
         }
         
-        // Above ground: Assume air (render face) - shows chunk edge above terrain
+        // Above terrain: Assume air (render face)
         return 0;
     }
 
@@ -211,8 +252,8 @@ public class Chunk : MonoBehaviour
         // Step 2: Get blended biome HEIGHT MULTIPLIERS (not noise parameters!)
         float blendedHeightMultiplier = GetBlendedHeightMultiplier(x, z);
         
-        // Step 3: Apply height curve to noise (Sebastian Lague's technique)
-        float curvedHeight = world.heightCurve.Evaluate(baseNoise);
+        // Step 3: Apply height curve to noise (THREAD-SAFE version!)
+        float curvedHeight = World.EvaluateHeightCurve(baseNoise);
         
         // Step 4: Apply biome height multiplier to the curved noise
         // This is where biomes affect the terrain - they scale the HEIGHT, not the noise!
@@ -303,6 +344,38 @@ public class Chunk : MonoBehaviour
             sections[i] = section;
         }
     }
+    
+    // THREADED MESH SYSTEM: Create sections from pre-generated mesh data
+    public void CreateSectionsFromMeshData(SectionMeshData[] meshDataArray, BiomeAttributes[,] biomeMap)
+    {
+        // Create section GameObjects
+        for (int i = 0; i < VoxelData.SectionsPerChunk; i++)
+        {
+            int yOffset = i * VoxelData.SectionHeight;
+
+            // Create section GameObject as child of this chunk
+            GameObject sectionObject = new GameObject($"Section_{i}");
+            sectionObject.transform.parent = transform;
+            sectionObject.transform.localPosition = new Vector3(0, yOffset, 0);
+
+            // Add required components
+            ChunkSection section = sectionObject.AddComponent<ChunkSection>();
+            section.meshRenderer = sectionObject.AddComponent<MeshRenderer>();
+            section.meshFilter = sectionObject.AddComponent<MeshFilter>();
+            section.meshCollider = sectionObject.AddComponent<MeshCollider>();
+            
+            // Set material from world
+            section.meshRenderer.material = world.material;
+
+            // Initialize the section
+            section.Initialize(this, world, yOffset);
+            
+            // Upload pre-generated mesh data to GPU (MAIN THREAD only - Unity API!)
+            section.UploadMeshData(meshDataArray[i]);
+
+            sections[i] = section;
+        }
+    }
 
     void GenerateAllSections()
     {
@@ -318,7 +391,8 @@ public class Chunk : MonoBehaviour
             }
         }
         
-        Debug.Log($"Chunk ({coord.x},{coord.z}): Generated {generatedSections}/{sections.Length} sections");
+        // Reduced logging - only log if debugging needed
+        // Debug.Log($"Chunk ({coord.x},{coord.z}): Generated {generatedSections}/{sections.Length} sections");
     }
 
 }
