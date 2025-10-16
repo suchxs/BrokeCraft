@@ -150,8 +150,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a01097750f5209a40bca71ba507e41c6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  meshRenderer: {fileID: 182781238}
-  meshFilter: {fileID: 182781239}
+  sectionPrefab: {fileID: 0}
 --- !u!23 &182781238
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -175,7 +174,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 999cc84557c67b640840dbdd2a2c4dc9, type: 2}
+  - {fileID: 2100000, guid: 6b39e2b19ef4d3443bfecb214d47ee4d, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -220,6 +219,92 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &255374075
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 255374076}
+  - component: {fileID: 255374077}
+  m_Layer: 0
+  m_Name: World
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &255374076
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 255374075}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 427.62817, y: 255.4631, z: 309.2651}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &255374077
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 255374075}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ef19a6f0724d2424b8cc511e8ec33b7a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  material: {fileID: 2100000, guid: 6b39e2b19ef4d3443bfecb214d47ee4d, type: 2}
+  blocktypes:
+  - blockName: Air
+    isSolid: 0
+    backFaceTexture: 0
+    frontFaceTexture: 0
+    topFaceTexture: 0
+    bottomFaceTexture: 0
+    leftFaceTexture: 0
+    rightFaceTexture: 0
+  - blockName: Bedrock
+    isSolid: 1
+    backFaceTexture: 11
+    frontFaceTexture: 11
+    topFaceTexture: 11
+    bottomFaceTexture: 11
+    leftFaceTexture: 11
+    rightFaceTexture: 11
+  - blockName: Stone
+    isSolid: 1
+    backFaceTexture: 1670
+    frontFaceTexture: 1670
+    topFaceTexture: 1670
+    bottomFaceTexture: 1670
+    leftFaceTexture: 1670
+    rightFaceTexture: 1670
+  - blockName: Grass
+    isSolid: 1
+    backFaceTexture: 537
+    frontFaceTexture: 537
+    topFaceTexture: 1099
+    bottomFaceTexture: 853
+    leftFaceTexture: 537
+    rightFaceTexture: 537
+  - blockName: Dirt
+    isSolid: 1
+    backFaceTexture: 853
+    frontFaceTexture: 853
+    topFaceTexture: 853
+    bottomFaceTexture: 853
+    leftFaceTexture: 853
+    rightFaceTexture: 853
 --- !u!1 &330585543
 GameObject:
   m_ObjectHideFlags: 0
@@ -535,3 +620,4 @@ SceneRoots:
   - {fileID: 410087041}
   - {fileID: 832575519}
   - {fileID: 182781240}
+  - {fileID: 255374076}

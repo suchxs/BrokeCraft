@@ -114,7 +114,7 @@ public class ChunkSection : MonoBehaviour
         }
     }
 
-    // Check adjacent voxel in chunk coordinates
+    // Check adjacent voxel in chunk coordinates (supports cross-chunk checks)
     bool CheckVoxel(int x, int y, int z, int faceIndex)
     {
         // Add face offset direction
@@ -122,13 +122,8 @@ public class ChunkSection : MonoBehaviour
         y += (int)VoxelData.faceChecks[faceIndex].y;
         z += (int)VoxelData.faceChecks[faceIndex].z;
 
-        // Check bounds (using full chunk height)
-        if (x < 0 || x >= VoxelData.ChunkWidth ||
-            y < 0 || y >= VoxelData.ChunkHeight ||
-            z < 0 || z >= VoxelData.ChunkWidth)
-            return false;
-
-        // Get voxel from parent chunk
+        // Get voxel from parent chunk (which handles cross-chunk lookups)
+        // If out of bounds, Chunk.GetVoxel() will check neighboring chunks
         byte blockID = parentChunk.GetVoxel(x, y, z);
         return world.blocktypes[blockID].isSolid;
     }
@@ -164,18 +159,22 @@ public class ChunkSection : MonoBehaviour
 
     void AddTexture(int textureID)
     {
-        float y = textureID / VoxelData.TextureAtlasSizeInBlocks;
-        float x = textureID - (y * VoxelData.TextureAtlasSizeInBlocks);
+        // Calculate column and row in atlas (supports non-square atlases)
+        int col = textureID % VoxelData.TextureAtlasWidth;
+        int row = textureID / VoxelData.TextureAtlasWidth;
 
-        x *= VoxelData.NormalizedBlockTextureSize;
-        y *= VoxelData.NormalizedBlockTextureSize;
+        // Calculate normalized UV coordinates
+        float x = col * VoxelData.NormalizedBlockTextureWidth;
+        float y = row * VoxelData.NormalizedBlockTextureHeight;
 
-        y = 1f - y - VoxelData.NormalizedBlockTextureSize;
+        // Flip Y (Unity UV origin is bottom-left, texture atlas is top-left)
+        y = 1f - y - VoxelData.NormalizedBlockTextureHeight;
 
+        // Add 4 UV coordinates for this face (quad)
         uvs.Add(new Vector2(x, y));
-        uvs.Add(new Vector2(x, y + VoxelData.NormalizedBlockTextureSize));
-        uvs.Add(new Vector2(x + VoxelData.NormalizedBlockTextureSize, y));
-        uvs.Add(new Vector2(x + VoxelData.NormalizedBlockTextureSize, y + VoxelData.NormalizedBlockTextureSize));
+        uvs.Add(new Vector2(x, y + VoxelData.NormalizedBlockTextureHeight));
+        uvs.Add(new Vector2(x + VoxelData.NormalizedBlockTextureWidth, y));
+        uvs.Add(new Vector2(x + VoxelData.NormalizedBlockTextureWidth, y + VoxelData.NormalizedBlockTextureHeight));
     }
 }
 
