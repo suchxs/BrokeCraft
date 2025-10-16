@@ -62,8 +62,15 @@ public class DebugConsole : MonoBehaviour
         GUILayout.Label($"Position: X={playerPos.x:F2}, Y={playerPos.y:F2}, Z={playerPos.z:F2}", infoStyle);
         GUILayout.Label($"Chunk: ({Mathf.FloorToInt(playerPos.x / VoxelData.ChunkWidth)}, {Mathf.FloorToInt(playerPos.z / VoxelData.ChunkWidth)})", infoStyle);
         
-        // Biome (placeholder)
-        GUILayout.Label($"Biome: Plains (Coming Soon)", infoStyle);
+        // Biome (get actual biome from world)
+        World world = FindObjectOfType<World>();
+        string biomeName = "Unknown";
+        if (world != null)
+        {
+            BiomeAttributes biome = world.GetBiome(Mathf.FloorToInt(playerPos.x), Mathf.FloorToInt(playerPos.z));
+            biomeName = biome != null ? biome.biomeName : "None";
+        }
+        GUILayout.Label($"Biome: {biomeName}", infoStyle);
         
         // Ping (placeholder)
         GUILayout.Label($"Ping: N/A (Singleplayer)", infoStyle);

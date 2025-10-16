@@ -90,7 +90,7 @@ public class Chunk : MonoBehaviour
 
     void PopulateVoxelMap()
     {
-        // Generate terrain using Perlin noise
+        // Generate terrain using Perlin noise with biomes
         for (int x = 0; x < VoxelData.ChunkWidth; x++)
         {
             for (int z = 0; z < VoxelData.ChunkWidth; z++)
@@ -99,8 +99,11 @@ public class Chunk : MonoBehaviour
                 int globalX = x + (coord.x * VoxelData.ChunkWidth);
                 int globalZ = z + (coord.z * VoxelData.ChunkWidth);
 
-                // Get terrain height using Perlin noise
-                int terrainHeight = GetTerrainHeight(globalX, globalZ);
+                // Get biome for this position
+                BiomeAttributes biome = world.GetBiome(globalX, globalZ);
+
+                // Get terrain height using Perlin noise (biome-specific)
+                int terrainHeight = GetTerrainHeight(globalX, globalZ, biome);
 
                 // Fill column from bottom to terrain height
                 for (int y = 0; y < VoxelData.ChunkHeight; y++)
@@ -118,13 +121,13 @@ public class Chunk : MonoBehaviour
                     }
                     else if (y < terrainHeight)
                     {
-                        // Dirt (surface layer)
-                        voxelMap[x, y, z] = 4;
+                        // Subsurface layer (dirt or biome-specific)
+                        voxelMap[x, y, z] = (byte)(biome != null ? biome.subSurfaceBlock : 4);
                     }
                     else if (y == terrainHeight)
                     {
-                        // Grass block on top
-                        voxelMap[x, y, z] = 3;
+                        // Surface block (grass or biome-specific)
+                        voxelMap[x, y, z] = (byte)(biome != null ? biome.surfaceBlock : 3);
                     }
                     else
                     {
@@ -136,11 +139,15 @@ public class Chunk : MonoBehaviour
         }
     }
 
-    // Calculate terrain height using multi-octave Perlin noise (like Minecraft)
-    int GetTerrainHeight(int x, int z)
+    // Calculate terrain height using multi-octave Perlin noise (biome-aware)
+    int GetTerrainHeight(int x, int z, BiomeAttributes biome)
     {
+        // Use biome-specific values or defaults
+        float scale = biome != null ? biome.terrainScale : 0.005f;
+        int baseHeight = biome != null ? biome.terrainHeight : 64;
+        
         float amplitude = 1f;
-        float frequency = world.scale;
+        float frequency = scale;
         float noiseHeight = 0f;
         float maxValue = 0f;  // Used for normalizing
 
@@ -166,8 +173,9 @@ public class Chunk : MonoBehaviour
         // Normalize to 0-1 range
         noiseHeight = (noiseHeight + maxValue) / (maxValue * 2);
 
-        // Convert to terrain height
-        int height = Mathf.FloorToInt(world.baseHeight + (noiseHeight * world.terrainHeightMultiplier));
+        // Convert to terrain height (use biome's height range)
+        int heightVariation = 40; // Can make this biome-specific too
+        int height = Mathf.FloorToInt(baseHeight + (noiseHeight * heightVariation));
 
         // Clamp to valid range
         height = Mathf.Clamp(height, 1, VoxelData.ChunkHeight - 1);

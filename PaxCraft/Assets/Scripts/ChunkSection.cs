@@ -11,6 +11,7 @@ public class ChunkSection : MonoBehaviour
     List<Vector3> vertices;
     List<int> triangles;
     List<Vector2> uvs;
+    List<Color> colors;  // For biome-based grass coloring
 
     // Reference to parent chunk for accessing full voxel map
     Chunk parentChunk;
@@ -30,6 +31,7 @@ public class ChunkSection : MonoBehaviour
         vertices = new List<Vector3>(maxVerts);
         triangles = new List<int>(maxVerts * 36 / 24);
         uvs = new List<Vector2>(maxVerts);
+        colors = new List<Color>(maxVerts);
     }
 
     // Check if this section is completely empty (all air blocks)
@@ -57,6 +59,7 @@ public class ChunkSection : MonoBehaviour
         vertices.Clear();
         triangles.Clear();
         uvs.Clear();
+        colors.Clear();
         vertexIndex = 0;
 
         // Only generate mesh for blocks in this section
@@ -84,6 +87,12 @@ public class ChunkSection : MonoBehaviour
         // Skip air blocks entirely
         if (blockID == 0) return;
 
+        // Get biome and blended grass color for this block's global position
+        int globalX = x + (parentChunk.coord.x * VoxelData.ChunkWidth);
+        int globalZ = z + (parentChunk.coord.z * VoxelData.ChunkWidth);
+        BiomeAttributes biome = world.GetBiome(globalX, globalZ);
+        Color blockColor = world.GetBlendedGrassColor(globalX, globalZ);  // Use blended color!
+
         // Local position within this section (for mesh vertices)
         // y needs to be relative to section, not chunk
         int localY = y - sectionYOffset;
@@ -99,6 +108,17 @@ public class ChunkSection : MonoBehaviour
                 vertices.Add(blockPos + VoxelData.voxelVerts[VoxelData.voxelTris[p, 1]]);
                 vertices.Add(blockPos + VoxelData.voxelVerts[VoxelData.voxelTris[p, 2]]);
                 vertices.Add(blockPos + VoxelData.voxelVerts[VoxelData.voxelTris[p, 3]]);
+
+                // Add vertex colors (biome color for grass block TOP FACE only)
+                bool isGrassBlock = blockID == 3;  // Grass block ID
+                bool isTopFace = p == 2;  // Face index 2 = top face
+                bool shouldTint = isGrassBlock && isTopFace && (biome != null && biome.useGrassColoring);
+                Color vertexColor = shouldTint ? blockColor : Color.white;
+                
+                colors.Add(vertexColor);
+                colors.Add(vertexColor);
+                colors.Add(vertexColor);
+                colors.Add(vertexColor);
 
                 AddTexture(world.blocktypes[blockID].GetTextureID(p));
 
@@ -153,6 +173,7 @@ public class ChunkSection : MonoBehaviour
         mesh.SetVertices(vertices);
         mesh.SetTriangles(triangles, 0);
         mesh.SetUVs(0, uvs);
+        mesh.SetColors(colors);  // Set vertex colors for biome tinting
 
         mesh.RecalculateNormals();
     }

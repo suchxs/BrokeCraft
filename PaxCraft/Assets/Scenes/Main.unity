@@ -150,7 +150,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a01097750f5209a40bca71ba507e41c6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  sectionPrefab: {fileID: 0}
+  coord:
+    x: 0
+    z: 0
 --- !u!23 &182781238
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -275,36 +277,44 @@ MonoBehaviour:
     rightFaceTexture: 0
   - blockName: Bedrock
     isSolid: 1
-    backFaceTexture: 11
-    frontFaceTexture: 11
-    topFaceTexture: 11
-    bottomFaceTexture: 11
-    leftFaceTexture: 11
-    rightFaceTexture: 11
+    backFaceTexture: 48
+    frontFaceTexture: 48
+    topFaceTexture: 48
+    bottomFaceTexture: 48
+    leftFaceTexture: 48
+    rightFaceTexture: 48
   - blockName: Stone
     isSolid: 1
-    backFaceTexture: 1670
-    frontFaceTexture: 1670
-    topFaceTexture: 1670
-    bottomFaceTexture: 1670
-    leftFaceTexture: 1670
-    rightFaceTexture: 1670
+    backFaceTexture: 907
+    frontFaceTexture: 907
+    topFaceTexture: 907
+    bottomFaceTexture: 907
+    leftFaceTexture: 907
+    rightFaceTexture: 907
   - blockName: Grass
     isSolid: 1
-    backFaceTexture: 537
-    frontFaceTexture: 537
-    topFaceTexture: 1099
-    bottomFaceTexture: 853
-    leftFaceTexture: 537
-    rightFaceTexture: 537
+    backFaceTexture: 443
+    frontFaceTexture: 443
+    topFaceTexture: 446
+    bottomFaceTexture: 346
+    leftFaceTexture: 443
+    rightFaceTexture: 443
   - blockName: Dirt
     isSolid: 1
-    backFaceTexture: 853
-    frontFaceTexture: 853
-    topFaceTexture: 853
-    bottomFaceTexture: 853
-    leftFaceTexture: 853
-    rightFaceTexture: 853
+    backFaceTexture: 346
+    frontFaceTexture: 346
+    topFaceTexture: 346
+    bottomFaceTexture: 346
+    leftFaceTexture: 346
+    rightFaceTexture: 346
+  worldSizeInChunks: 16
+  seed: 1234
+  surfaceLayer: 4
+  octaves: 4
+  persistence: 0.45
+  lacunarity: 2
+  biomeScale: 0.003
+  biomes: []
 --- !u!1 &330585543
 GameObject:
   m_ObjectHideFlags: 0
@@ -612,6 +622,50 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1496710734
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1496710736}
+  - component: {fileID: 1496710735}
+  m_Layer: 0
+  m_Name: DebugConsole
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1496710735
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1496710734}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c39cd22032409df4d89610a8e5e864d2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!4 &1496710736
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1496710734}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 256.14914, y: 82.33095, z: 62.307648}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -621,3 +675,4 @@ SceneRoots:
   - {fileID: 832575519}
   - {fileID: 182781240}
   - {fileID: 255374076}
+  - {fileID: 1496710736}

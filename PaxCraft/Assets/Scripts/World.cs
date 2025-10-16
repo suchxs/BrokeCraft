@@ -10,17 +10,16 @@ public class World : MonoBehaviour
     [Header("World Generation")]
     public int worldSizeInChunks = 16;  // Create a 16x16 chunk world (256x256 blocks)
     public int seed = 1234;              // World seed for consistent generation
-    
-    [Header("Terrain Generation - Minecraft Style")]
-    public int baseHeight = 64;          // Sea level / base terrain height
-    public int terrainHeightMultiplier = 40;  // Maximum terrain height variation
     public int surfaceLayer = 4;         // Depth of dirt layer below grass
     
     [Header("Multi-Octave Noise Settings")]
-    public float scale = 0.005f;         // Base frequency (LOWER = BIGGER features)
     public int octaves = 4;              // Number of noise layers (more = more detail)
     public float persistence = 0.45f;    // How much each octave contributes (0-1)
     public float lacunarity = 2f;        // Frequency multiplier per octave
+    
+    [Header("Biome Settings")]
+    public float biomeScale = 0.001f;    // LOWER = LARGER biomes, smoother transitions
+    public BiomeAttributes[] biomes;     // Array of biome configurations
 
     // Dictionary to store all chunks by their coordinates
     Dictionary<ChunkCoord, Chunk> chunks = new Dictionary<ChunkCoord, Chunk>();
@@ -86,6 +85,77 @@ public class World : MonoBehaviour
         if (chunks.ContainsKey(coord))
             return chunks[coord];
         return null;
+    }
+
+    // Get biome at world position (with smooth blending)
+    public BiomeAttributes GetBiome(int x, int z)
+    {
+        if (biomes == null || biomes.Length == 0)
+            return null;
+
+        // Use 2D Perlin noise for biome selection
+        float xCoord = (x + seed) * biomeScale;
+        float zCoord = (z + seed) * biomeScale;
+        
+        float biomeValue = Mathf.PerlinNoise(xCoord, zCoord);
+        
+        // Map noise value to biome index
+        int biomeIndex = Mathf.FloorToInt(biomeValue * biomes.Length);
+        biomeIndex = Mathf.Clamp(biomeIndex, 0, biomes.Length - 1);
+        
+        return biomes[biomeIndex];
+    }
+
+    // Get blended biome properties at position (for smooth transitions)
+    public BiomeAttributes GetBlendedBiome(int x, int z)
+    {
+        if (biomes == null || biomes.Length == 0)
+            return null;
+
+        // Sample biome at 4 neighboring positions for blending
+        BiomeAttributes center = GetBiome(x, z);
+        BiomeAttributes north = GetBiome(x, z + 4);
+        BiomeAttributes south = GetBiome(x, z - 4);
+        BiomeAttributes east = GetBiome(x + 4, z);
+        BiomeAttributes west = GetBiome(x - 4, z);
+
+        // If all neighbors are the same biome, return it directly
+        if (center == north && center == south && center == east && center == west)
+            return center;
+
+        // Blend biome properties (simplified - just returns center for now)
+        // This creates smoother transitions as neighboring biomes influence terrain
+        return center;
+    }
+
+    // Get blended grass color at position (Minecraft-style blending)
+    public Color GetBlendedGrassColor(int x, int z)
+    {
+        if (biomes == null || biomes.Length == 0)
+            return Color.white;
+
+        // Sample multiple positions and blend colors
+        int sampleRadius = 2;
+        Color totalColor = Color.black;
+        int sampleCount = 0;
+
+        for (int dx = -sampleRadius; dx <= sampleRadius; dx++)
+        {
+            for (int dz = -sampleRadius; dz <= sampleRadius; dz++)
+            {
+                BiomeAttributes biome = GetBiome(x + dx, z + dz);
+                if (biome != null)
+                {
+                    totalColor += biome.grassColor;
+                    sampleCount++;
+                }
+            }
+        }
+
+        if (sampleCount == 0)
+            return Color.white;
+
+        return totalColor / sampleCount;
     }
 
 }
