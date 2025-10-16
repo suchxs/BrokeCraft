@@ -199,6 +199,7 @@ public class Chunk : MonoBehaviour
             ChunkSection section = sectionObject.AddComponent<ChunkSection>();
             section.meshRenderer = sectionObject.AddComponent<MeshRenderer>();
             section.meshFilter = sectionObject.AddComponent<MeshFilter>();
+            section.meshCollider = sectionObject.AddComponent<MeshCollider>();
             
             // Set material from world
             section.meshRenderer.material = world.material;

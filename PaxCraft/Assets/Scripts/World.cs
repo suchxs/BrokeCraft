@@ -26,7 +26,16 @@ public class World : MonoBehaviour
 
     void Start()
     {
+        // Ensure World is at origin for proper chunk positioning
+        transform.position = Vector3.zero;
+        
         GenerateWorld();
+    }
+    
+    void Awake()
+    {
+        // Also set in Awake to ensure it's at origin before anything else
+        transform.position = Vector3.zero;
     }
 
     void GenerateWorld()
@@ -51,6 +60,75 @@ public class World : MonoBehaviour
         }
 
         Debug.Log($"World generation complete!");
+        
+        // Wait a frame for colliders to be ready, then spawn player
+        StartCoroutine(SpawnPlayerDelayed());
+    }
+    
+    IEnumerator SpawnPlayerDelayed()
+    {
+        // Wait for physics to update colliders
+        yield return new WaitForSeconds(0.5f);
+        
+        PlayerController player = FindObjectOfType<PlayerController>();
+        if (player != null)
+        {
+            // Calculate world center
+            float worldSize = worldSizeInChunks * VoxelData.ChunkWidth;
+            int centerX = Mathf.FloorToInt(worldSize / 2f);
+            int centerZ = Mathf.FloorToInt(worldSize / 2f);
+            
+            // Get ACTUAL terrain height at spawn position using Perlin noise
+            int terrainHeight = GetTerrainHeightAt(centerX, centerZ);
+            
+            // Spawn player 5 blocks above terrain
+            Vector3 spawnPosition = new Vector3(centerX, terrainHeight + 5, centerZ);
+            player.transform.position = spawnPosition;
+            
+            Debug.Log($"Player spawned at: {spawnPosition} (Terrain height: {terrainHeight})");
+            Debug.Log("Terrain colliders ready!");
+        }
+    }
+    
+    // Calculate actual terrain height at a specific position (same as chunk generation)
+    int GetTerrainHeightAt(int x, int z)
+    {
+        BiomeAttributes biome = GetBiome(x, z);
+        
+        // Use biome-specific values or defaults
+        float scale = biome != null ? biome.terrainScale : 0.005f;
+        int baseHeight = biome != null ? biome.terrainHeight : 64;
+        
+        float amplitude = 1f;
+        float frequency = scale;
+        float noiseHeight = 0f;
+        float maxValue = 0f;
+
+        // Layer multiple octaves of Perlin noise (same as Chunk.cs)
+        for (int i = 0; i < octaves; i++)
+        {
+            float xCoord = (x + seed) * frequency;
+            float zCoord = (z + seed) * frequency;
+            float perlinValue = Mathf.PerlinNoise(xCoord, zCoord) * 2 - 1;
+            
+            noiseHeight += perlinValue * amplitude;
+            maxValue += amplitude;
+            
+            amplitude *= persistence;
+            frequency *= lacunarity;
+        }
+
+        // Normalize to 0-1 range
+        noiseHeight = (noiseHeight + maxValue) / (maxValue * 2);
+
+        // Convert to terrain height
+        int heightVariation = 40;
+        int height = Mathf.FloorToInt(baseHeight + (noiseHeight * heightVariation));
+
+        // Clamp to valid range
+        height = Mathf.Clamp(height, 1, VoxelData.ChunkHeight - 1);
+
+        return height;
     }
 
     void CreateChunk(int x, int z)
@@ -59,9 +137,8 @@ public class World : MonoBehaviour
 
         // Create chunk GameObject
         GameObject chunkObject = new GameObject($"Chunk_{x}_{z}");
-        chunkObject.transform.parent = transform;
 
-        // Position chunk in world space
+        // Position chunk in world space FIRST
         // Each chunk is VoxelData.ChunkWidth (16) blocks wide
         Vector3 chunkPosition = new Vector3(
             x * VoxelData.ChunkWidth,
@@ -69,6 +146,9 @@ public class World : MonoBehaviour
             z * VoxelData.ChunkWidth
         );
         chunkObject.transform.position = chunkPosition;
+        
+        // Then parent it (keeping world position)
+        chunkObject.transform.SetParent(transform, true);
 
         // Add Chunk component and initialize
         Chunk chunk = chunkObject.AddComponent<Chunk>();

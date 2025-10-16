@@ -6,6 +6,7 @@ public class ChunkSection : MonoBehaviour
 {
     public MeshRenderer meshRenderer;
     public MeshFilter meshFilter;
+    public MeshCollider meshCollider;
 
     int vertexIndex = 0;
     List<Vector3> vertices;
@@ -176,6 +177,21 @@ public class ChunkSection : MonoBehaviour
         mesh.SetColors(colors);  // Set vertex colors for biome tinting
 
         mesh.RecalculateNormals();
+        
+        // Update collider with new mesh (CRITICAL for collision)
+        if (meshCollider != null)
+        {
+            meshCollider.sharedMesh = null;  // Clear old mesh first
+            meshCollider.convex = false;     // MUST be false for terrain (non-convex)
+            meshCollider.cookingOptions = MeshColliderCookingOptions.CookForFasterSimulation 
+                                         | MeshColliderCookingOptions.EnableMeshCleaning 
+                                         | MeshColliderCookingOptions.WeldColocatedVertices;
+            meshCollider.sharedMesh = mesh;  // Assign new mesh
+            
+            // Force physics to update
+            meshCollider.enabled = false;
+            meshCollider.enabled = true;
+        }
     }
 
     void AddTexture(int textureID)
