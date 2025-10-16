@@ -5,16 +5,16 @@ using UnityEngine;
 public static class VoxelData
 {
 
-    public static readonly int ChunkWidth = 5;
-    public static readonly int ChunkHeight = 15;
+    public static readonly int ChunkWidth = 16;
+    public static readonly int ChunkHeight = 256;  // Full world height
+    public static readonly int SectionHeight = 16;  // Each section is 16 blocks tall
+    
+    // Calculate number of sections per chunk
+    public static readonly int SectionsPerChunk = ChunkHeight / SectionHeight;  // 256/16 = 16 sections
 
     public static readonly int TextureAtlasSizeInBlocks = 4;
-    public static float NormalizedBlockTextureSize
-    {
-
-        get { return 1f / (float)TextureAtlasSizeInBlocks; }
-
-    }
+    // Pre-calculated for performance - avoid division every call
+    public static readonly float NormalizedBlockTextureSize = 0.25f;
 
     public static readonly Vector3[] voxelVerts = new Vector3[8] {
 

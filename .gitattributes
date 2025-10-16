@@ -1,0 +1,10 @@
+# Ignore Unity material and metadata files for GitHub language stats
+*.mat linguist-vendored
+*.meta linguist-vendored
+*.asset linguist-vendored
+*.unity linguist-vendored
+*.prefab linguist-vendored
+*.anim linguist-vendored
+
+# Only count C# code for language stats
+*.cs linguist-detectable=true
