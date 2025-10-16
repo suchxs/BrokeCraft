@@ -8,6 +8,17 @@ public class World : MonoBehaviour
     public Material material;
     public BlockType[] blocktypes;
 
+    void Start()
+    {
+        // Initialize any chunks in the scene
+        // When you have multiple chunks, you'll create them here instead
+        Chunk chunk = Object.FindFirstObjectByType<Chunk>();
+        if (chunk != null)
+        {
+            chunk.Initialize(this);
+        }
+    }
+
 }
 
 [System.Serializable]
