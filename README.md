@@ -1,6 +1,5 @@
 # UnoptimizedCraft
-> ⚠️ **Work In progress** - I will post an update when everything is in order <br>
-> ⚠️ **Chunk Generation and Logic is still unstable and crap** - Whole Chunk Generation and Voxel Logic is still being rewritten <br>
+> ⚠️ **No Release Yet** - Will Release A beta version once prototype is working! <br>
 
 A high-performance Minecraft-style voxel engine written in C# + Unity, leveraging Cubic Chunks, LOD, Frustum & Occlusion Culling, and Burst Compiler optimizations to achieve massive render distances and unlimited world height — without vanilla C# overhead. The idea is to combine [Distant Horizons](https://www.curseforge.com/minecraft/mc-mods/distant-horizons) Level Details (Removing Minecraft render distance) and [Cubic Chunks](https://www.curseforge.com/minecraft/mc-mods/opencubicchunks) (Remove build limit of minecraft)
 
