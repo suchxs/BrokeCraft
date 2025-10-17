@@ -7,8 +7,12 @@ public class ChunkUploadManager : MonoBehaviour
 {
     // Frame budget settings (Minecraft-style)
     private const float TARGET_FRAME_TIME = 0.016f;  // 16ms = 60 FPS
-    private const int MAX_UPLOADS_PER_FRAME = 2;     // Max mesh uploads per frame
-    private const float UPLOAD_TIME_BUDGET = 0.008f; // 8ms budget for uploads
+    private const int MAX_UPLOADS_PER_FRAME = 8;     // AGGRESSIVE FIX: Increased to 8 for 4x faster chunk loading!
+    private const float UPLOAD_TIME_BUDGET = 0.012f; // AGGRESSIVE FIX: Increased to 12ms budget (75% of frame)
+    
+    // OPTIMIZATION: Dynamic frame budget based on actual frame times
+    private const bool USE_DYNAMIC_BUDGET = true;
+    private float lastFrameTime = 0f;
     
     // Queue of chunks waiting to be uploaded to GPU
     private Queue<MeshDataResult> pendingUploads = new Queue<MeshDataResult>();
@@ -36,6 +40,9 @@ public class ChunkUploadManager : MonoBehaviour
         frameStartTime = Time.realtimeSinceStartup;
         totalUploadsThisFrame = 0;
         
+        // Track last frame time for dynamic budgeting
+        lastFrameTime = Time.deltaTime;
+        
         // Process uploads with frame budget
         ProcessPendingUploads();
     }
@@ -59,8 +66,25 @@ public class ChunkUploadManager : MonoBehaviour
     
     bool CanUploadMore()
     {
+        // AGGRESSIVE FIX: Dynamic budgeting - if FPS is good, upload more!
+        int maxUploads = MAX_UPLOADS_PER_FRAME;
+        
+        if (USE_DYNAMIC_BUDGET && lastFrameTime > 0)
+        {
+            // If last frame was fast (< 13ms), allow more uploads
+            if (lastFrameTime < 0.013f)
+            {
+                maxUploads = MAX_UPLOADS_PER_FRAME + 4; // Boost to 12 when FPS is good!
+            }
+            // If frame is slow (> 20ms), reduce uploads
+            else if (lastFrameTime > 0.020f)
+            {
+                maxUploads = Mathf.Max(2, MAX_UPLOADS_PER_FRAME / 2); // Reduce to 4 when struggling
+            }
+        }
+        
         // Check upload count limit
-        if (totalUploadsThisFrame >= MAX_UPLOADS_PER_FRAME)
+        if (totalUploadsThisFrame >= maxUploads)
             return false;
         
         // Check time budget

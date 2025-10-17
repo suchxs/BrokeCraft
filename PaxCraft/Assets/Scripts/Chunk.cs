@@ -4,8 +4,9 @@ using UnityEngine;
 
 public class Chunk : MonoBehaviour
 {
-    // The full voxel map for entire chunk (16x16x256)
+    // The full voxel map for entire chunk (16x16x256) = 65KB per chunk!
     // Public for neighbor chunk access
+    // MEMORY NOTE: This is cleared after mesh generation to save memory
     public byte[,,] voxelMap = new byte[VoxelData.ChunkWidth, VoxelData.ChunkHeight, VoxelData.ChunkWidth];
 
     // Array of chunk sections (16 sections of 16 height each)
@@ -62,8 +63,8 @@ public class Chunk : MonoBehaviour
         GenerateAllSections();
         isMeshed = true;
         
-        // Notify neighbors to update their edges (fixes boundary rendering)
-        // Skip during initial spawn for better performance
+        // OPTIMIZATION FIX: Neighbor notifications now queued and rate-limited
+        // This prevents cascading mesh regenerations that cause lag spikes!
         if (notifyNeighbors)
         {
             NotifyNeighborsToUpdate();
@@ -83,6 +84,7 @@ public class Chunk : MonoBehaviour
     }
     
     // Tell neighboring chunks to update their meshes (fixes edge faces)
+    // OPTIMIZATION: Now queues updates instead of immediate regeneration
     void NotifyNeighborsToUpdate()
     {
         // Check all 4 horizontal neighbors
@@ -99,8 +101,9 @@ public class Chunk : MonoBehaviour
             Chunk neighbor = world.GetChunk(neighborCoord);
             if (neighbor != null && neighbor.isMeshed)
             {
-                // Neighbor exists and is meshed - tell it to update
-                neighbor.RegenerateMesh();
+                // CRITICAL FIX: Queue update instead of immediate regeneration!
+                // This prevents cascading updates that cause lag spikes
+                world.QueueChunkMeshUpdate(neighbor);
             }
         }
     }

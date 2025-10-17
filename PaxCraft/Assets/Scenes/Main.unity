@@ -153,6 +153,7 @@ MonoBehaviour:
   coord:
     x: 0
     z: 0
+  world: {fileID: 0}
 --- !u!23 &182781238
 MeshRenderer:
   m_ObjectHideFlags: 0

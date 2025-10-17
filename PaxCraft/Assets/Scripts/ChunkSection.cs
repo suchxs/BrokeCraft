@@ -21,10 +21,14 @@ public class ChunkSection : MonoBehaviour
     // This section's Y offset in the chunk (0, 16, 32, 48, etc.)
     public int sectionYOffset;
     
+    // PROXIMITY COLLIDERS: Distance threshold for enabling colliders (in blocks)
+    private const float COLLIDER_DISTANCE_THRESHOLD = 80f; // ~5 chunks
+    
     // OPTIMIZATION: Delay collider generation (Minecraft-style!)
     private bool colliderNeedsUpdate = false;
     private Mesh cachedMesh = null;
     private int colliderBakeFrame = -1; // Frame when collider should bake
+    private int lastColliderCheckFrame = -1; // Last frame we checked distance
 
     public void Initialize(Chunk _parentChunk, World _world, int _yOffset)
     {
@@ -131,9 +135,10 @@ public class ChunkSection : MonoBehaviour
         // OPTIMIZATION: Skip normals for flat shading (Minecraft style)
         // mesh.RecalculateNormals(); // Disabled for performance!
         
-        // Schedule delayed collider baking
+        // AGGRESSIVE FIX: Spread collider baking over 600 frames (10 seconds at 60fps)!
+        // This eliminates physics spikes by spreading work over a very long period
         cachedMesh = mesh;
-        colliderBakeFrame = Time.frameCount + (gameObject.GetInstanceID() % 60) + 10;
+        colliderBakeFrame = Time.frameCount + (gameObject.GetInstanceID() % 600) + 120;
         colliderNeedsUpdate = true;
     }
 
@@ -254,29 +259,65 @@ public class ChunkSection : MonoBehaviour
         // (Flat shading is fine for blocky voxels!)
         // mesh.RecalculateNormals();  // Disabled for HUGE performance boost!
         
-        // MINECRAFT OPTIMIZATION: DELAY collider generation!
+        // AGGRESSIVE FIX: Spread collider baking over 600 frames (10 seconds at 60fps)!
+        // This eliminates physics spikes by spreading work over a very long period
         cachedMesh = mesh;
-        
-        // Schedule collider baking for a future frame (staggered based on instance ID)
-        colliderBakeFrame = Time.frameCount + (gameObject.GetInstanceID() % 60) + 10;
+        colliderBakeFrame = Time.frameCount + (gameObject.GetInstanceID() % 600) + 120;
         colliderNeedsUpdate = true;
     }
     
     // OPTIMIZED: Bake colliders in a staggered manner (simple, no coroutines!)
     void Update()
     {
+        // Initial collider baking (delayed after mesh creation)
         if (colliderNeedsUpdate && Time.frameCount >= colliderBakeFrame && cachedMesh != null)
         {
             BakeCollider();
             colliderNeedsUpdate = false;
+            lastColliderCheckFrame = Time.frameCount;
+        }
+        
+        // PROXIMITY UPDATE: Re-check collider distance every 60 frames (1 second at 60fps)
+        // This enables/disables colliders as player moves around
+        if (Time.frameCount - lastColliderCheckFrame >= 60 && cachedMesh != null)
+        {
+            BakeCollider();
+            lastColliderCheckFrame = Time.frameCount;
         }
     }
     
-    // Bake collider mesh
+    // Bake collider mesh - PROXIMITY-BASED (only near player)
     void BakeCollider()
     {
-        if (meshCollider != null && cachedMesh != null)
+        if (meshCollider == null || cachedMesh == null)
+            return;
+        
+        // PROXIMITY FIX: Only enable colliders near player to prevent memory explosion!
+        // Check distance from section center to player
+        bool shouldEnableCollider = false;
+        
+        if (world != null && world.player != null)
         {
+            // Calculate section world position
+            Vector3 sectionWorldPos = parentChunk.transform.position + new Vector3(
+                VoxelData.ChunkWidth / 2f,
+                sectionYOffset + VoxelData.SectionHeight / 2f,
+                VoxelData.ChunkWidth / 2f
+            );
+            
+            // Check horizontal distance (ignore Y)
+            Vector3 playerPos = world.player.position;
+            float horizontalDist = Vector2.Distance(
+                new Vector2(sectionWorldPos.x, sectionWorldPos.z),
+                new Vector2(playerPos.x, playerPos.z)
+            );
+            
+            shouldEnableCollider = horizontalDist <= COLLIDER_DISTANCE_THRESHOLD;
+        }
+        
+        if (shouldEnableCollider)
+        {
+            // Enable collider for this section (player is nearby)
             meshCollider.sharedMesh = null;  // Clear old mesh first
             meshCollider.convex = false;     // MUST be false for terrain
             meshCollider.cookingOptions = MeshColliderCookingOptions.CookForFasterSimulation 
@@ -285,15 +326,37 @@ public class ChunkSection : MonoBehaviour
             meshCollider.sharedMesh = cachedMesh;  // Assign new mesh
             meshCollider.enabled = true;
         }
+        else
+        {
+            // Disable collider (player is far away)
+            if (meshCollider.enabled)
+            {
+                meshCollider.sharedMesh = null;
+                meshCollider.enabled = false;
+            }
+        }
     }
     
     // Return mesh to pool when section is destroyed/reused
     public void ReturnMeshToPool()
     {
+        // CRITICAL FIX: Clear mesh collider first to prevent empty mesh warnings
+        if (meshCollider != null)
+        {
+            meshCollider.sharedMesh = null;
+            meshCollider.enabled = false;
+        }
+        
         if (meshFilter != null && meshFilter.mesh != null)
         {
             ChunkPool.ReturnMesh(meshFilter.mesh);
             meshFilter.mesh = null;
+        }
+        
+        // Also disable renderer to prevent rendering empty mesh
+        if (meshRenderer != null)
+        {
+            meshRenderer.enabled = false;
         }
     }
 

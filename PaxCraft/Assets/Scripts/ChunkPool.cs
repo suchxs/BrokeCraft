@@ -9,9 +9,9 @@ public class ChunkPool : MonoBehaviour
     private static Stack<GameObject> chunkObjectPool = new Stack<GameObject>();
     private static Stack<Mesh> meshPool = new Stack<Mesh>();
     
-    // Pool settings
-    private const int INITIAL_POOL_SIZE = 50;
-    private const int MAX_POOL_SIZE = 200;
+    // Pool settings - MEMORY FIX: Reduced to prevent memory bloat
+    private const int INITIAL_POOL_SIZE = 20;  // Reduced from 50
+    private const int MAX_POOL_SIZE = 50;      // Reduced from 200 - prevents pool accumulation
     
     // Reference to World for setup
     private World world;
@@ -43,6 +43,10 @@ public class ChunkPool : MonoBehaviour
             chunkObject = chunkObjectPool.Pop();
             chunkObject.name = $"Chunk_{coord.x}_{coord.z}";
             chunkObject.transform.position = position;
+            
+            // CRITICAL FIX: Clean up old sections with stale collider data before reactivating!
+            CleanupOldSections(chunkObject);
+            
             chunkObject.SetActive(true);
         }
         else
@@ -53,6 +57,25 @@ public class ChunkPool : MonoBehaviour
         }
         
         return chunkObject;
+    }
+    
+    // CRITICAL FIX: Clean up old section components to prevent collider errors
+    private static void CleanupOldSections(GameObject chunkObject)
+    {
+        // Get all old section children
+        ChunkSection[] oldSections = chunkObject.GetComponentsInChildren<ChunkSection>(true);
+        
+        foreach (ChunkSection section in oldSections)
+        {
+            // Return mesh to pool and clear collider
+            section.ReturnMeshToPool();
+            
+            // Destroy the old section GameObject
+            if (section.gameObject != chunkObject)
+            {
+                GameObject.Destroy(section.gameObject);
+            }
+        }
     }
     
     // Return chunk GameObject to pool
