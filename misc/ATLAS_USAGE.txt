@@ -1,0 +1,196 @@
+╔═══════════════════════════════════════════════════════════════╗
+║       COMPLETE MINECRAFT BLOCK ATLAS - USAGE GUIDE           ║
+╚═══════════════════════════════════════════════════════════════╝
+
+WHAT WAS BUILT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✓ CompleteBlockAtlas_Custom.png
+  → 528x528px atlas with ALL 1083 Minecraft block textures
+  → 33x33 grid layout (16x16px per texture)
+  → Ready to use in Unity!
+
+✓ CompleteBlockAtlas_Reference.png
+  → SAME as above but with texture IDs overlaid
+  → Use this to find texture indices for new blocks
+  → Each texture shows its index number in top-left
+
+✓ CompleteBlockAtlas_Mapping.json
+  → Machine-readable mapping of texture names to indices
+  → Format: "texture_name": index
+
+
+CURRENT BLOCK INDICES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Stone:          907
+Dirt:           346
+Grass Top:      446
+Grass Side:     443
+Bedrock:         48
+
+These are already set in BlockTextureData.cs!
+
+
+HOW TO USE IN UNITY:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Copy Atlas to Unity:
+   misc/CompleteBlockAtlas_Custom.png
+   → UnoptimizedCrap/Assets/Textures/CompleteBlockAtlas_Custom.png
+
+2. Import Settings (SELECT TEXTURE IN UNITY):
+   ✓ Filter Mode: Point (no filter) ← CRITICAL!
+   ✓ Compression: None
+   ✓ Max Size: 1024 or 2048
+   ✓ Click "Apply"
+
+3. Assign to Material:
+   - Select BlockAtlas material
+   - Drag CompleteBlockAtlas_Custom.png to Base Map
+   - Done!
+
+4. Press Play ▶️
+   - Textures should now be correct!
+
+
+HOW TO ADD NEW BLOCKS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Example: Adding Oak Planks
+
+1. FIND TEXTURE INDEX:
+   - Open: misc/CompleteBlockAtlas_Reference.png
+   - Look for "oak_planks" texture
+   - Note the ID number shown (example: 621)
+   
+   OR search in CompleteBlockAtlas_Mapping.json:
+   "oak_planks": 621
+
+2. ADD TO BlockType.cs:
+   public enum BlockType : byte
+   {
+       Air = 0,
+       Stone = 1,
+       Dirt = 2,
+       Grass = 3,
+       Bedrock = 4,
+       OakPlanks = 5,  // ← Add here
+   }
+
+3. ADD TO BlockTextureData.cs:
+   // Add constant:
+   public const int TEX_OAK_PLANKS = 621;
+   
+   // Add case in GetTextureIndex():
+   case BlockType.OakPlanks:
+       return TEX_OAK_PLANKS;
+
+4. Done! Use OakPlanks in your terrain generation
+
+
+EXAMPLE: BLOCKS WITH DIFFERENT FACE TEXTURES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Example: Oak Log (different top/side)
+
+1. Find indices:
+   oak_log:     619  (side texture)
+   oak_log_top: 620  (top/bottom texture)
+
+2. Add constants:
+   public const int TEX_OAK_LOG = 619;
+   public const int TEX_OAK_LOG_TOP = 620;
+
+3. Add case with face checking:
+   case BlockType.OakLog:
+       if (faceIndex == (int)VoxelData.Face.Top || 
+           faceIndex == (int)VoxelData.Face.Bottom)
+           return TEX_OAK_LOG_TOP;
+       else
+           return TEX_OAK_LOG;
+
+
+COMMON TEXTURE INDICES (for reference):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Stone:            907
+Cobblestone:      206
+Dirt:             346
+Grass Block Top:  446
+Grass Block Side: 443
+Bedrock:           48
+Oak Planks:       621
+Oak Log:          619
+Oak Log Top:      620
+Sand:             819
+Gravel:           447
+Glass:            435
+Water (still):   1036
+Lava (still):     518
+
+Check CompleteBlockAtlas_Reference.png for all others!
+
+
+ATLAS LAYOUT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Grid: 33 columns × 33 rows
+Size: 528×528 pixels
+Texture Size: 16×16 pixels each
+Total: 1083 textures (fills 33×33-6 slots)
+
+Calculation:
+  Index to (X,Y): 
+    x = index % 33
+    y = index / 33
+  
+  (X,Y) to Index:
+    index = x + (y * 33)
+
+Example: Texture 907 (stone)
+  x = 907 % 33 = 16
+  y = 907 / 33 = 27
+  Position: Column 16, Row 27
+
+
+REBUILDING THE ATLAS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If you update Minecraft textures:
+
+1. Replace textures in: misc/Minecraft_Textures/block/
+2. Run: python misc/build_full_atlas.py
+3. New atlas files will be generated
+4. Copy to Unity and reassign to material
+
+
+PERFORMANCE NOTES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✓ Single 528×528 texture is efficient
+✓ Point filtering prevents blurry textures
+✓ All textures in one atlas = 1 draw call per chunk
+✓ Burst-compiled UV calculations = zero overhead
+✓ Future-proof: All textures available instantly
+
+
+TROUBLESHOOTING:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Wrong textures appearing?
+→ Check Filter Mode is "Point (no filter)"
+→ Verify indices in BlockTextureData.cs
+→ Look at CompleteBlockAtlas_Reference.png
+
+Blurry textures?
+→ Filter Mode MUST be "Point (no filter)"
+
+Can't find a texture?
+→ Open CompleteBlockAtlas_Reference.png
+→ Or search CompleteBlockAtlas_Mapping.json
+
+Missing textures (magenta)?
+→ Texture not in atlas
+→ Check spelling in BlockTexture_Mapping.json
+
