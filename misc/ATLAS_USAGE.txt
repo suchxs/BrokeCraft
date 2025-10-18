@@ -2,24 +2,6 @@
 ║       COMPLETE MINECRAFT BLOCK ATLAS - USAGE GUIDE           ║
 ╚═══════════════════════════════════════════════════════════════╝
 
-WHAT WAS BUILT:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-✓ CompleteBlockAtlas_Custom.png
-  → 528x528px atlas with ALL 1083 Minecraft block textures
-  → 33x33 grid layout (16x16px per texture)
-  → Ready to use in Unity!
-
-✓ CompleteBlockAtlas_Reference.png
-  → SAME as above but with texture IDs overlaid
-  → Use this to find texture indices for new blocks
-  → Each texture shows its index number in top-left
-
-✓ CompleteBlockAtlas_Mapping.json
-  → Machine-readable mapping of texture names to indices
-  → Format: "texture_name": index
-
-
 CURRENT BLOCK INDICES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
