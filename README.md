@@ -1,31 +1,31 @@
 # UnoptimizedCraft
-> ⚠️ **No Release Yet** - Will Release A beta version once prototype is working! <br>
+> ⚠️ **No Release Yet** - Will Release A beta version once the prototype is working! <br>
 
-A high-performance Minecraft-style voxel engine written in C# + Unity, leveraging Cubic Chunks, LOD, Frustum & Occlusion Culling, and Burst Compiler optimizations to achieve massive render distances and unlimited world height — without vanilla C# overhead. The idea is to combine [Distant Horizons](https://www.curseforge.com/minecraft/mc-mods/distant-horizons) Level Details (Removing Minecraft render distance) and [Cubic Chunks](https://www.curseforge.com/minecraft/mc-mods/opencubicchunks) (Remove build limit of minecraft)
+A high-performance Minecraft-style voxel engine written in C# + Unity. The idea is to combine [Distant Horizons](https://www.curseforge.com/minecraft/mc-mods/distant-horizons) Level Details (Removing Minecraft render distance) and [Cubic Chunks](https://www.curseforge.com/minecraft/mc-mods/opencubicchunks) (Remove build limit of Minecraft) to achieve massive render distances and unlimited world height — without vanilla C# overhead.
 
 
 ## How does this shit work?
 ### 1. Voxels & Rendering
-- Voxels are stored in a contiguous array, Each block generates only the visible faces (face culling) and Textures are drawn from a single atlas to reduce draw calls.
-- Each chunk is built into a single combined mesh instead of instantiating cubes individually. The mesh can be split per side to allow side-based culling (disabling unseen faces).
+- Voxels are stored in a contiguous array. Each block generates only the visible faces (face culling), and Textures are drawn from a single [atlas](https://minecraft.wiki/w/Atlas) to reduce draw calls.
+- Each [chunk](https://minecraft.fandom.com/wiki/Chunk) is built into a single combined mesh instead of instantiating cubes individually. The mesh can be split per side to allow side-based culling (disabling unseen faces).
 
 ### 2. Mesh & Vertex Optimization
-- Vertex positions are whole numbers ((0,0,0), (1,0,0)), allowing them to be stored as bytes, which drastically reduces vertex memory footprint.
+- Vertex positions are whole numbers ((0,0,0), (1,0,0)), allowing them to be stored as bytes, which drastically reduces the vertex memory footprint.
 - Mesh data is generated directly in memory for maximum Burst Compatibility
 
 ### 3. Chunk System (Cubic Chunks)
-- Replaces Minecraft's flat chunk system and uses cubic chunks to support infinite vertical expansion
-- Chunk load **dynamically** both horizontally and vertically
+- Replaces Minecraft's flat chunk system and uses [Cubic Chunks](https://www.curseforge.com/minecraft/mc-mods/opencubicchunks) to support infinite vertical expansion
+- Chunks load **dynamically** both horizontally and vertically
 - Each vertical column loads or unloads based on the player’s height.
 
 ## Optimization 
 ### Burst Compiler
-- All Code must be Burst-Compatible instead of Vanilla c#
+- All Code must be Burst-compatible instead of vanilla C#
 ### Occlusion Culling and LOD
 - LOD meshes are combined to reduce draw calls
 - Hidden chunks (behind terrain) are not rendered at all
 ### Greedy Meshing
-- Adjacent faces are merged into larger quads which greatly reduce triangle count
+- Adjacent faces are merged into larger quads, which greatly reduces the triangle count
 ### Multithreading (finally lol)
 - All world generation and mesh creation occur off the main thread (using Unity Job System and C# Task System)
 - Terrain and Chunk Data are parallelized to use multiple cores effectively
@@ -36,11 +36,11 @@ A high-performance Minecraft-style voxel engine written in C# + Unity, leveragin
 - Terrain height = exponential function of noise (for natural mountain ranges)
 ### Performance
 - Integrated FastNoiseSIMD, for fast multi-core noise evaluation
-- Parallelized accross worker threads for near-instant chunk generation
+- Parallelized across worker threads for near-instant chunk generation
 
 
   
-Special Thanks to:
+## Special Thanks
 - https://www.youtube.com/watch?v=QF2Nj1zME40
 - https://www.alanzucconi.com/2022/06/05/minecraft-world-generation/
 - https://minecraft.fandom.com/wiki/Blocks.png-atlas
