@@ -28,6 +28,10 @@ public class World : MonoBehaviour
     [Tooltip("Maximum number of new chunks to instantiate per frame when streaming.")]
     [Range(1, 32)]
     public int maxChunkCreationsPerFrame = 6;
+
+    [Header("Distant Terrain")]
+    [Tooltip("Optional renderer that draws kilometre-scale horizon geometry. Will be created automatically if omitted.")]
+    [SerializeField] private DistantTerrainRenderer distantTerrainRenderer;
     
     [Header("Terrain Generation")]
     [Tooltip("Procedural terrain parameters (Perlin FBM with Burst jobs)")]
@@ -63,6 +67,8 @@ public class World : MonoBehaviour
         {
             GenerateWorld();
         }
+
+        InitializeDistantTerrain();
     }
     
     private void Update()
@@ -243,6 +249,44 @@ public class World : MonoBehaviour
         return chunk;
     }
     
+    private void InitializeDistantTerrain()
+    {
+        if (distantTerrainRenderer == null)
+        {
+            GameObject rendererObject = new GameObject("DistantTerrain");
+            rendererObject.transform.SetParent(transform, false);
+            distantTerrainRenderer = rendererObject.AddComponent<DistantTerrainRenderer>();
+        }
+
+        distantTerrainRenderer.Initialize(this, chunkMaterial);
+        distantTerrainRenderer.ConfigureNearField(ComputeNearFieldRadiusMeters());
+    }
+
+    private float ComputeNearFieldRadiusMeters()
+    {
+        float horizontalHalf = math.max(1, horizontalViewDistance) * 0.5f;
+        float chunkSpan = VoxelData.ChunkWidth * (horizontalHalf + 2f);
+        return math.max(VoxelData.ChunkWidth * 2f, chunkSpan);
+    }
+
+    /// <summary>
+    /// Register a viewer transform (typically the player) so the distant renderer can track it.
+    /// </summary>
+    public void RegisterViewer(Transform viewerTransform)
+    {
+        if (viewerTransform == null)
+        {
+            return;
+        }
+
+        if (distantTerrainRenderer == null)
+        {
+            InitializeDistantTerrain();
+        }
+
+        distantTerrainRenderer?.SetViewer(viewerTransform, true);
+    }
+
     private void EnqueueChunkCreation(int3 chunkPosition)
     {
         if (chunks.ContainsKey(chunkPosition))

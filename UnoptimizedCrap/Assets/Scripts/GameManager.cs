@@ -96,6 +96,7 @@ public class GameManager : MonoBehaviour
         if (playerInstance != null)
         {
             playerInstance.Initialize(world);
+            world.RegisterViewer(playerObject.transform);
         }
         else
         {
