@@ -15,6 +15,13 @@ public class Chunk : MonoBehaviour
     private NativeArray<BlockType> blocks;
     private bool isBlocksAllocated = false;
     
+    // Column summary data for distant rendering
+    private NativeArray<ChunkColumnSummary> columnSummaries;
+    private JobHandle columnSummaryJobHandle;
+    private bool isColumnSummaryJobRunning = false;
+    private bool columnSummaryReady = false;
+    private bool columnSummaryDirty = false;
+    
     // Mesh components
     private MeshFilter meshFilter;
     private MeshRenderer meshRenderer;
@@ -93,6 +100,13 @@ public class Chunk : MonoBehaviour
             blocks = new NativeArray<BlockType>(VoxelData.ChunkSize, Allocator.Persistent);
             isBlocksAllocated = true;
         }
+
+        if (!columnSummaries.IsCreated)
+        {
+            columnSummaries = new NativeArray<ChunkColumnSummary>(VoxelData.ChunkWidth * VoxelData.ChunkDepth, Allocator.Persistent);
+        }
+        columnSummaryReady = false;
+        columnSummaryDirty = true;
         
         // Generate initial terrain data
         ScheduleTerrainGeneration();
@@ -125,6 +139,7 @@ public class Chunk : MonoBehaviour
         
         // Schedule job asynchronously - will complete in Update() without blocking
         ReceiveTerrainGenerationJob(job.ScheduleParallel(columnCount, batchSize, default));
+        MarkColumnSummaryDirty();
     }
     
     /// <summary>
@@ -135,8 +150,48 @@ public class Chunk : MonoBehaviour
         needsMeshRegeneration = true;
         meshDataReady = false;
     }
+
+    private void MarkColumnSummaryDirty()
+    {
+        if (!columnSummaries.IsCreated)
+        {
+            return;
+        }
+
+        bool wasDirty = columnSummaryDirty;
+        columnSummaryDirty = true;
+        columnSummaryReady = false;
+
+        if (!wasDirty)
+        {
+            world?.NotifyChunkColumnSummaryInvalidated(ChunkPosition);
+        }
+    }
     
     private bool needsMeshRegeneration = false;
+
+    private void ScheduleColumnSummaryJob()
+    {
+        if (!terrainDataReady || !columnSummaries.IsCreated || isColumnSummaryJobRunning)
+        {
+            return;
+        }
+
+        var job = new ChunkColumnSummaryJob
+        {
+            Blocks = blocks,
+            Summaries = columnSummaries,
+            ChunkPosition = ChunkPosition
+        };
+
+        int columnCount = columnSummaries.Length;
+        int workerCount = math.max(1, JobsUtility.JobWorkerCount);
+        int batchSize = math.max(1, columnCount / workerCount);
+
+        columnSummaryDirty = false;
+        columnSummaryJobHandle = job.Schedule(columnCount, batchSize, default);
+        isColumnSummaryJobRunning = true;
+    }
     
     /// <summary>
     /// Async job tracking - checks for completed jobs without stalling.
@@ -156,6 +211,27 @@ public class Chunk : MonoBehaviour
         {
             needsMeshRegeneration = false;
             StartMeshGeneration();
+        }
+
+        if (terrainDataReady)
+        {
+            if (columnSummaryDirty && !isColumnSummaryJobRunning)
+            {
+                ScheduleColumnSummaryJob();
+            }
+
+            if (isColumnSummaryJobRunning && columnSummaryJobHandle.IsCompleted)
+            {
+                columnSummaryJobHandle.Complete();
+                isColumnSummaryJobRunning = false;
+                columnSummaryReady = true;
+                world?.NotifyChunkColumnSummaryReady(ChunkPosition, columnSummaries);
+
+                if (columnSummaryDirty)
+                {
+                    ScheduleColumnSummaryJob();
+                }
+            }
         }
     }
     
@@ -432,6 +508,15 @@ public class Chunk : MonoBehaviour
         terrainDataReady = false;
         needsMeshRegeneration = true;
         meshDataReady = false;
+
+        if (isColumnSummaryJobRunning)
+        {
+            columnSummaryJobHandle.Complete();
+            isColumnSummaryJobRunning = false;
+        }
+
+        columnSummaryReady = false;
+        MarkColumnSummaryDirty();
     }
 
     /// <summary>
@@ -449,6 +534,7 @@ public class Chunk : MonoBehaviour
             terrainJobHandle = default;
 
             world?.NotifyNeighborsToRegenerate(ChunkPosition);
+            MarkColumnSummaryDirty();
         }
     }
     
@@ -469,6 +555,7 @@ public class Chunk : MonoBehaviour
         }
         
         blocks[VoxelData.GetBlockIndex(x, y, z)] = blockType;
+        MarkColumnSummaryDirty();
         
         // Regenerate mesh
         RequestMeshRegeneration();
@@ -506,6 +593,13 @@ public class Chunk : MonoBehaviour
             isMeshJobRunning = false;
             meshDataReady = mesh != null;
         }
+
+        if (isColumnSummaryJobRunning)
+        {
+            columnSummaryJobHandle.Complete();
+            isColumnSummaryJobRunning = false;
+            columnSummaryReady = columnSummaries.IsCreated;
+        }
         
         // Complete terrain job if running
         if (isTerrainJobRunning)
@@ -530,6 +624,11 @@ public class Chunk : MonoBehaviour
         {
             blocks.Dispose();
             isBlocksAllocated = false;
+        }
+
+        if (columnSummaries.IsCreated)
+        {
+            columnSummaries.Dispose();
         }
     }
     

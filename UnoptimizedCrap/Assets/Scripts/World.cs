@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using Unity.Collections;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -48,6 +50,9 @@ public class World : MonoBehaviour
     
     // Parent transform for organization
     private Transform chunksParent;
+
+    public event Action<int3, NativeArray<ChunkColumnSummary>> ChunkColumnSummaryReady;
+    public event Action<int3> ChunkColumnSummaryInvalidated;
     
     private void Start()
     {
@@ -355,6 +360,24 @@ public class World : MonoBehaviour
             }
         }
     }
+
+    internal void NotifyChunkColumnSummaryReady(int3 chunkPosition, NativeArray<ChunkColumnSummary> summaries)
+    {
+        ChunkColumnSummaryReady?.Invoke(chunkPosition, summaries);
+        if (distantTerrainRenderer != null)
+        {
+            distantTerrainRenderer.OnChunkSummaryUpdated(chunkPosition, summaries);
+        }
+    }
+
+    internal void NotifyChunkColumnSummaryInvalidated(int3 chunkPosition)
+    {
+        ChunkColumnSummaryInvalidated?.Invoke(chunkPosition);
+        if (distantTerrainRenderer != null)
+        {
+            distantTerrainRenderer.OnChunkSummaryInvalidated(chunkPosition);
+        }
+    }
     
     /// <summary>
     /// Remove a chunk at the specified position
@@ -367,6 +390,7 @@ public class World : MonoBehaviour
         Chunk chunk = chunks[chunkPosition];
         chunks.Remove(chunkPosition);
         pendingChunkCreations.Remove(chunkPosition);
+        NotifyChunkColumnSummaryInvalidated(chunkPosition);
         
         // Notify neighbors to regenerate meshes (edges may need to render faces now)
         NotifyNeighborsToRegenerate(chunkPosition);

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -49,6 +50,7 @@ public class DistantTerrainRenderer : MonoBehaviour
     private NativeList<float3>[] segmentVertices = new NativeList<float3>[SegmentCount];
     private NativeList<float3>[] segmentNormals = new NativeList<float3>[SegmentCount];
     private NativeList<float2>[] segmentUVs = new NativeList<float2>[SegmentCount];
+    private NativeList<float4>[] segmentColors = new NativeList<float4>[SegmentCount];
     private NativeList<int>[] segmentTriangles = new NativeList<int>[SegmentCount];
     private readonly bool[] segmentHasGeometry = new bool[SegmentCount];
 
@@ -69,6 +71,15 @@ public class DistantTerrainRenderer : MonoBehaviour
     private float effectiveInnerRadius;
     private float effectiveFadeMargin;
     private float lastCenterHeight;
+    private bool summaryDataDirty;
+    private bool overrideMapsDirty;
+
+    private NativeHashMap<int2, float> columnHeightOverrides;
+    private NativeHashMap<int2, float4> columnColorOverrides;
+    private World subscribedWorld;
+
+    private readonly Dictionary<int2, Dictionary<int, ChunkColumnSummary[]>> chunkColumnSlices = new Dictionary<int2, Dictionary<int, ChunkColumnSummary[]>>(Int2Comparer.Instance);
+    private readonly Dictionary<int2, ColumnAggregate> columnAggregates = new Dictionary<int2, ColumnAggregate>(Int2Comparer.Instance);
 
     private void Awake()
     {
@@ -92,6 +103,8 @@ public class DistantTerrainRenderer : MonoBehaviour
         CompleteJobs();
         DisposeBuffers();
         DisposeSegments();
+        ResetSummaryCaches();
+        DisposeOverrideMaps();
     }
 
     private void Update()
@@ -119,6 +132,18 @@ public class DistantTerrainRenderer : MonoBehaviour
             pipelineHandle.Complete();
             pipelineRunning = false;
             ApplyMeshes();
+
+            if (summaryDataDirty)
+            {
+                summaryDataDirty = false;
+                TriggerPipelineForSummaryChanges();
+            }
+        }
+
+        if (!pipelineRunning && summaryDataDirty)
+        {
+            summaryDataDirty = false;
+            TriggerPipelineForSummaryChanges();
         }
 
         UpdateSegmentVisibility();
@@ -130,6 +155,13 @@ public class DistantTerrainRenderer : MonoBehaviour
         if (distantMaterial == null && fallbackMaterial != null)
         {
             distantMaterial = fallbackMaterial;
+        }
+
+        if (subscribedWorld != worldRef)
+        {
+            subscribedWorld = worldRef;
+            ResetSummaryCaches();
+            DisposeOverrideMaps();
         }
 
         EnsureSegments();
@@ -329,6 +361,7 @@ public class DistantTerrainRenderer : MonoBehaviour
             segmentVertices[i] = new NativeList<float3>(perSegmentVertices, Allocator.Persistent);
             segmentNormals[i] = new NativeList<float3>(perSegmentVertices, Allocator.Persistent);
             segmentUVs[i] = new NativeList<float2>(perSegmentVertices, Allocator.Persistent);
+            segmentColors[i] = new NativeList<float4>(perSegmentVertices, Allocator.Persistent);
             segmentTriangles[i] = new NativeList<int>(perSegmentIndices, Allocator.Persistent);
         }
     }
@@ -340,6 +373,7 @@ public class DistantTerrainRenderer : MonoBehaviour
             if (segmentVertices[i].IsCreated) segmentVertices[i].Clear();
             if (segmentNormals[i].IsCreated) segmentNormals[i].Clear();
             if (segmentUVs[i].IsCreated) segmentUVs[i].Clear();
+            if (segmentColors[i].IsCreated) segmentColors[i].Clear();
             if (segmentTriangles[i].IsCreated) segmentTriangles[i].Clear();
             segmentHasGeometry[i] = false;
         }
@@ -352,6 +386,7 @@ public class DistantTerrainRenderer : MonoBehaviour
             if (segmentVertices[i].IsCreated) segmentVertices[i].Dispose();
             if (segmentNormals[i].IsCreated) segmentNormals[i].Dispose();
             if (segmentUVs[i].IsCreated) segmentUVs[i].Dispose();
+            if (segmentColors[i].IsCreated) segmentColors[i].Dispose();
             if (segmentTriangles[i].IsCreated) segmentTriangles[i].Dispose();
         }
     }
@@ -393,6 +428,7 @@ public class DistantTerrainRenderer : MonoBehaviour
 
         CompleteJobs();
         ClearSegmentLists();
+        RebuildOverrideMapsIfNeeded();
 
         float2 gridStart = currentCenterXZ - new float2(renderDistanceMeters, renderDistanceMeters);
 
@@ -402,7 +438,8 @@ public class DistantTerrainRenderer : MonoBehaviour
             GridStartXZ = gridStart,
             SampleSpacing = sampleSpacing,
             SamplesPerAxis = samplesPerAxis,
-            NoiseSettings = cachedNoiseSettings
+            NoiseSettings = cachedNoiseSettings,
+            ColumnOverrides = columnHeightOverrides
         };
 
         int batchSize = math.max(32, samplesPerAxis);
@@ -446,10 +483,16 @@ public class DistantTerrainRenderer : MonoBehaviour
             UVsSouth = segmentUVs[SegmentSouth],
             UVsEast = segmentUVs[SegmentEast],
             UVsWest = segmentUVs[SegmentWest],
+            ColorsNorth = segmentColors[SegmentNorth],
+            ColorsSouth = segmentColors[SegmentSouth],
+            ColorsEast = segmentColors[SegmentEast],
+            ColorsWest = segmentColors[SegmentWest],
             TrianglesNorth = segmentTriangles[SegmentNorth],
             TrianglesSouth = segmentTriangles[SegmentSouth],
             TrianglesEast = segmentTriangles[SegmentEast],
-            TrianglesWest = segmentTriangles[SegmentWest]
+            TrianglesWest = segmentTriangles[SegmentWest],
+            ColumnColors = columnColorOverrides,
+            DefaultColor = new float4(0.5f, 0.5f, 0.5f, 1f)
         };
 
         pipelineHandle = meshJob.Schedule(normalHandle);
@@ -475,6 +518,11 @@ public class DistantTerrainRenderer : MonoBehaviour
 
     private float SampleHeightImmediate(float2 worldXZ)
     {
+        if (TrySampleCachedHeight(worldXZ, out float cachedHeight))
+        {
+            return cachedHeight;
+        }
+
         if (!noiseSettingsCached)
         {
             cachedNoiseSettings = world != null
@@ -508,6 +556,7 @@ public class DistantTerrainRenderer : MonoBehaviour
             NativeList<float3> verts = segmentVertices[i];
             NativeList<float3> norms = segmentNormals[i];
             NativeList<float2> uv = segmentUVs[i];
+            NativeList<float4> cols = segmentColors[i];
             NativeList<int> tris = segmentTriangles[i];
 
             if (!verts.IsCreated || verts.Length == 0 || !tris.IsCreated || tris.Length == 0)
@@ -525,6 +574,10 @@ public class DistantTerrainRenderer : MonoBehaviour
             mesh.SetVertices(verts.AsArray().Reinterpret<Vector3>());
             mesh.SetNormals(norms.AsArray().Reinterpret<Vector3>());
             mesh.SetUVs(0, uv.AsArray().Reinterpret<Vector2>());
+            if (cols.IsCreated && cols.Length == verts.Length)
+            {
+                mesh.SetColors(cols.AsArray().Reinterpret<Color>());
+            }
             mesh.SetTriangles(tris.AsArray().ToArray(), 0, true);
             mesh.bounds = new Bounds(Vector3.zero, boundsSize);
 
@@ -593,6 +646,239 @@ public class DistantTerrainRenderer : MonoBehaviour
             renderer.enabled = dot >= 0f;
         }
     }
+
+    private void ResetSummaryCaches()
+    {
+        chunkColumnSlices.Clear();
+        columnAggregates.Clear();
+        summaryDataDirty = false;
+        overrideMapsDirty = true;
+    }
+
+    private void DisposeOverrideMaps()
+    {
+        if (columnHeightOverrides.IsCreated)
+        {
+            columnHeightOverrides.Dispose();
+            columnHeightOverrides = default;
+        }
+
+        if (columnColorOverrides.IsCreated)
+        {
+            columnColorOverrides.Dispose();
+            columnColorOverrides = default;
+        }
+    }
+
+    internal void OnChunkSummaryUpdated(int3 chunkPosition, NativeArray<ChunkColumnSummary> summaries)
+    {
+        StoreChunkSummary(chunkPosition, summaries);
+
+        int2 sliceKey = new int2(chunkPosition.x, chunkPosition.z);
+        if (chunkColumnSlices.TryGetValue(sliceKey, out var verticalSlices))
+        {
+            RebuildColumnSlice(sliceKey, verticalSlices);
+        }
+    }
+
+    internal void OnChunkSummaryInvalidated(int3 chunkPosition)
+    {
+        int2 sliceKey = new int2(chunkPosition.x, chunkPosition.z);
+        if (!chunkColumnSlices.TryGetValue(sliceKey, out var verticalSlices))
+        {
+            return;
+        }
+
+        if (!verticalSlices.Remove(chunkPosition.y))
+        {
+            return;
+        }
+
+        if (verticalSlices.Count == 0)
+        {
+            chunkColumnSlices.Remove(sliceKey);
+            RemoveColumnsForSlice(sliceKey);
+        }
+        else
+        {
+            RebuildColumnSlice(sliceKey, verticalSlices);
+        }
+    }
+
+    private void StoreChunkSummary(int3 chunkPosition, NativeArray<ChunkColumnSummary> summaries)
+    {
+        int2 sliceKey = new int2(chunkPosition.x, chunkPosition.z);
+        if (!chunkColumnSlices.TryGetValue(sliceKey, out var verticalSlices))
+        {
+            verticalSlices = new Dictionary<int, ChunkColumnSummary[]>();
+            chunkColumnSlices[sliceKey] = verticalSlices;
+        }
+
+        if (!verticalSlices.TryGetValue(chunkPosition.y, out var buffer) || buffer == null || buffer.Length != summaries.Length)
+        {
+            buffer = new ChunkColumnSummary[summaries.Length];
+            verticalSlices[chunkPosition.y] = buffer;
+        }
+
+        summaries.CopyTo(buffer);
+    }
+
+    private void RebuildColumnSlice(int2 sliceKey, Dictionary<int, ChunkColumnSummary[]> verticalSlices)
+    {
+        int chunkWidth = VoxelData.ChunkWidth;
+        int chunkDepth = VoxelData.ChunkDepth;
+        int worldBaseX = sliceKey.x * chunkWidth;
+        int worldBaseZ = sliceKey.y * chunkDepth;
+
+        for (int localZ = 0; localZ < chunkDepth; localZ++)
+        {
+            for (int localX = 0; localX < chunkWidth; localX++)
+            {
+                bool foundSurface = false;
+                ColumnAggregate aggregate = default;
+
+                foreach (var pair in verticalSlices)
+                {
+                    ChunkColumnSummary[] slice = pair.Value;
+                    if (slice == null || slice.Length == 0)
+                    {
+                        continue;
+                    }
+
+                    int columnIndex = localX + localZ * chunkWidth;
+                    ChunkColumnSummary summary = slice[columnIndex];
+                    if (summary.hasSurface == 0)
+                    {
+                        continue;
+                    }
+
+                    if (!foundSurface || summary.surfaceWorldY > aggregate.surfaceHeight)
+                    {
+                        foundSurface = true;
+                        aggregate.surfaceHeight = summary.surfaceWorldY;
+                        aggregate.surfaceTint = BlockVisuals.GetSurfaceTint(summary.surfaceBlock);
+                        aggregate.hasSurface = true;
+                    }
+                }
+
+                int2 worldKey = new int2(worldBaseX + localX, worldBaseZ + localZ);
+                if (foundSurface)
+                {
+                    columnAggregates[worldKey] = aggregate;
+                }
+                else
+                {
+                    columnAggregates.Remove(worldKey);
+                }
+            }
+        }
+
+        overrideMapsDirty = true;
+        summaryDataDirty = true;
+    }
+
+    private void RemoveColumnsForSlice(int2 sliceKey)
+    {
+        int chunkWidth = VoxelData.ChunkWidth;
+        int chunkDepth = VoxelData.ChunkDepth;
+        int worldBaseX = sliceKey.x * chunkWidth;
+        int worldBaseZ = sliceKey.y * chunkDepth;
+
+        for (int localZ = 0; localZ < chunkDepth; localZ++)
+        {
+            for (int localX = 0; localX < chunkWidth; localX++)
+            {
+                int2 worldKey = new int2(worldBaseX + localX, worldBaseZ + localZ);
+                columnAggregates.Remove(worldKey);
+            }
+        }
+
+        overrideMapsDirty = true;
+        summaryDataDirty = true;
+    }
+
+    private void RebuildOverrideMapsIfNeeded()
+    {
+        if (!overrideMapsDirty)
+        {
+            return;
+        }
+
+        DisposeOverrideMaps();
+
+        int capacity = math.max(64, columnAggregates.Count * 2);
+        columnHeightOverrides = new NativeHashMap<int2, float>(capacity, Allocator.Persistent);
+        columnColorOverrides = new NativeHashMap<int2, float4>(capacity, Allocator.Persistent);
+
+        foreach (var pair in columnAggregates)
+        {
+            int2 key = pair.Key;
+            ColumnAggregate aggregate = pair.Value;
+            if (!aggregate.hasSurface)
+            {
+                continue;
+            }
+
+            columnHeightOverrides.TryAdd(key, aggregate.surfaceHeight);
+            columnColorOverrides.TryAdd(key, aggregate.surfaceTint);
+        }
+
+        overrideMapsDirty = false;
+    }
+
+    private bool TrySampleCachedHeight(float2 worldXZ, out float height)
+    {
+        int blockX = (int)math.floor(worldXZ.x);
+        int blockZ = (int)math.floor(worldXZ.y);
+        int2 key = new int2(blockX, blockZ);
+
+        if (columnAggregates.TryGetValue(key, out var aggregate) && aggregate.hasSurface)
+        {
+            height = aggregate.surfaceHeight;
+            return true;
+        }
+
+        height = 0f;
+        return false;
+    }
+
+    private void TriggerPipelineForSummaryChanges()
+    {
+        if (!hasCenter || pipelineRunning || !heights.IsCreated)
+        {
+            summaryDataDirty = true;
+            return;
+        }
+
+        float centerHeight = SampleHeightImmediate(currentCenterXZ);
+        lastCenterHeight = centerHeight;
+        SchedulePipeline(centerHeight);
+    }
+
+    private sealed class Int2Comparer : IEqualityComparer<int2>
+    {
+        public static readonly Int2Comparer Instance = new Int2Comparer();
+
+        public bool Equals(int2 x, int2 y)
+        {
+            return x.x == y.x && x.y == y.y;
+        }
+
+        public int GetHashCode(int2 obj)
+        {
+            unchecked
+            {
+                return (obj.x * 397) ^ obj.y;
+            }
+        }
+    }
+
+    private struct ColumnAggregate
+    {
+        public float surfaceHeight;
+        public float4 surfaceTint;
+        public bool hasSurface;
+    }
 }
 
 [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Low)]
@@ -603,6 +889,7 @@ internal struct DistantTerrainHeightJob : IJobFor
     public float SampleSpacing;
     public int SamplesPerAxis;
     [ReadOnly] public TerrainNoiseSettings NoiseSettings;
+    [ReadOnly] public NativeHashMap<int2, float> ColumnOverrides;
 
     public void Execute(int index)
     {
@@ -611,6 +898,18 @@ internal struct DistantTerrainHeightJob : IJobFor
 
         float worldX = GridStartXZ.x + x * SampleSpacing;
         float worldZ = GridStartXZ.y + z * SampleSpacing;
+
+        if (ColumnOverrides.IsCreated)
+        {
+            int blockX = (int)math.floor(worldX);
+            int blockZ = (int)math.floor(worldZ);
+            float overrideHeight;
+            if (ColumnOverrides.TryGetValue(new int2(blockX, blockZ), out overrideHeight))
+            {
+                Heights[index] = overrideHeight;
+                return;
+            }
+        }
 
         TerrainHeightSample sample = TerrainNoise.SampleHeight(new float2(worldX, worldZ), NoiseSettings);
         Heights[index] = sample.Height;
@@ -682,11 +981,18 @@ internal struct DistantTerrainMeshJob : IJob
     [NativeDisableContainerSafetyRestriction] public NativeList<float2> UVsSouth;
     [NativeDisableContainerSafetyRestriction] public NativeList<float2> UVsEast;
     [NativeDisableContainerSafetyRestriction] public NativeList<float2> UVsWest;
+    [NativeDisableContainerSafetyRestriction] public NativeList<float4> ColorsNorth;
+    [NativeDisableContainerSafetyRestriction] public NativeList<float4> ColorsSouth;
+    [NativeDisableContainerSafetyRestriction] public NativeList<float4> ColorsEast;
+    [NativeDisableContainerSafetyRestriction] public NativeList<float4> ColorsWest;
 
     [NativeDisableContainerSafetyRestriction] public NativeList<int> TrianglesNorth;
     [NativeDisableContainerSafetyRestriction] public NativeList<int> TrianglesSouth;
     [NativeDisableContainerSafetyRestriction] public NativeList<int> TrianglesEast;
     [NativeDisableContainerSafetyRestriction] public NativeList<int> TrianglesWest;
+
+    [ReadOnly] public NativeHashMap<int2, float4> ColumnColors;
+    public float4 DefaultColor;
 
     public void Execute()
     {
@@ -740,29 +1046,29 @@ internal struct DistantTerrainMeshJob : IJob
         switch (segment)
         {
             case North:
-                AppendQuad(ref VerticesNorth, ref NormalsNorth, ref UVsNorth, ref TrianglesNorth, sampleX, sampleZ, corner00, corner10, corner01, corner11, blendWeight);
+                AppendQuad(ref VerticesNorth, ref NormalsNorth, ref UVsNorth, ref ColorsNorth, ref TrianglesNorth, sampleX, sampleZ, corner00, corner10, corner01, corner11, blendWeight);
                 break;
             case South:
-                AppendQuad(ref VerticesSouth, ref NormalsSouth, ref UVsSouth, ref TrianglesSouth, sampleX, sampleZ, corner00, corner10, corner01, corner11, blendWeight);
+                AppendQuad(ref VerticesSouth, ref NormalsSouth, ref UVsSouth, ref ColorsSouth, ref TrianglesSouth, sampleX, sampleZ, corner00, corner10, corner01, corner11, blendWeight);
                 break;
             case East:
-                AppendQuad(ref VerticesEast, ref NormalsEast, ref UVsEast, ref TrianglesEast, sampleX, sampleZ, corner00, corner10, corner01, corner11, blendWeight);
+                AppendQuad(ref VerticesEast, ref NormalsEast, ref UVsEast, ref ColorsEast, ref TrianglesEast, sampleX, sampleZ, corner00, corner10, corner01, corner11, blendWeight);
                 break;
             case West:
-                AppendQuad(ref VerticesWest, ref NormalsWest, ref UVsWest, ref TrianglesWest, sampleX, sampleZ, corner00, corner10, corner01, corner11, blendWeight);
+                AppendQuad(ref VerticesWest, ref NormalsWest, ref UVsWest, ref ColorsWest, ref TrianglesWest, sampleX, sampleZ, corner00, corner10, corner01, corner11, blendWeight);
                 break;
         }
     }
 
-    private void AppendQuad(ref NativeList<float3> verts, ref NativeList<float3> normals, ref NativeList<float2> uvs, ref NativeList<int> tris,
+    private void AppendQuad(ref NativeList<float3> verts, ref NativeList<float3> normals, ref NativeList<float2> uvs, ref NativeList<float4> colors, ref NativeList<int> tris,
         int sampleX, int sampleZ, float2 corner00, float2 corner10, float2 corner01, float2 corner11, float blendWeight)
     {
         int baseIndex = verts.Length;
 
-        AppendVertex(ref verts, ref normals, ref uvs, sampleX, sampleZ, corner00, blendWeight);
-        AppendVertex(ref verts, ref normals, ref uvs, sampleX + 1, sampleZ, corner10, blendWeight);
-        AppendVertex(ref verts, ref normals, ref uvs, sampleX, sampleZ + 1, corner01, blendWeight);
-        AppendVertex(ref verts, ref normals, ref uvs, sampleX + 1, sampleZ + 1, corner11, blendWeight);
+        AppendVertex(ref verts, ref normals, ref uvs, ref colors, sampleX, sampleZ, corner00, blendWeight);
+        AppendVertex(ref verts, ref normals, ref uvs, ref colors, sampleX + 1, sampleZ, corner10, blendWeight);
+        AppendVertex(ref verts, ref normals, ref uvs, ref colors, sampleX, sampleZ + 1, corner01, blendWeight);
+        AppendVertex(ref verts, ref normals, ref uvs, ref colors, sampleX + 1, sampleZ + 1, corner11, blendWeight);
 
         tris.Add(baseIndex + 0);
         tris.Add(baseIndex + 2);
@@ -773,7 +1079,7 @@ internal struct DistantTerrainMeshJob : IJob
         tris.Add(baseIndex + 3);
     }
 
-    private void AppendVertex(ref NativeList<float3> verts, ref NativeList<float3> normals, ref NativeList<float2> uvs,
+    private void AppendVertex(ref NativeList<float3> verts, ref NativeList<float3> normals, ref NativeList<float2> uvs, ref NativeList<float4> colors,
         int sampleX, int sampleZ, float2 worldXZ, float blendWeight)
     {
         int index = sampleX + sampleZ * SamplesPerAxis;
@@ -787,5 +1093,17 @@ internal struct DistantTerrainMeshJob : IJob
         float u = (float)sampleX / (SamplesPerAxis - 1);
         float v = (float)sampleZ / (SamplesPerAxis - 1);
         uvs.Add(new float2(u, v));
+
+        float4 tint = DefaultColor;
+        if (ColumnColors.IsCreated)
+        {
+            int blockX = (int)math.floor(worldXZ.x);
+            int blockZ = (int)math.floor(worldXZ.y);
+            if (ColumnColors.TryGetValue(new int2(blockX, blockZ), out float4 overrideTint))
+            {
+                tint = overrideTint;
+            }
+        }
+        colors.Add(tint);
     }
 }
