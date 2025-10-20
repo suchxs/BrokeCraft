@@ -7,9 +7,8 @@ using UnityEngine;
 /// <summary>
 /// Represents a single chunk in the world.
 /// Manages block data and mesh generation using Burst-compiled jobs.
-/// Includes optimized mesh collision for player physics.
 /// </summary>
-[RequireComponent(typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider))]
+[RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
 public class Chunk : MonoBehaviour
 {
     // Block data for this chunk
@@ -19,8 +18,8 @@ public class Chunk : MonoBehaviour
     // Mesh components
     private MeshFilter meshFilter;
     private MeshRenderer meshRenderer;
-    private MeshCollider meshCollider;
     private Mesh mesh;
+    private MeshCollider meshCollider;
     
     // Job data
     private JobHandle meshJobHandle;
@@ -36,6 +35,7 @@ public class Chunk : MonoBehaviour
     private JobHandle terrainJobHandle;
     private bool isTerrainJobRunning = false;
     private bool terrainDataReady = false;
+    private bool meshDataReady = false;
     
     // Voxel lookup data as bytes (shared across all chunks, allocated once)
     // Using byte types for 4x memory reduction
@@ -51,20 +51,18 @@ public class Chunk : MonoBehaviour
         meshFilter = GetComponent<MeshFilter>();
         meshRenderer = GetComponent<MeshRenderer>();
         meshCollider = GetComponent<MeshCollider>();
+        if (meshCollider == null)
+        {
+            meshCollider = gameObject.AddComponent<MeshCollider>();
+        }
+        meshCollider.convex = false;
         
-        // Create mesh (shared between renderer and collider for efficiency)
+        // Create mesh
         mesh = new Mesh();
         mesh.name = "Chunk Mesh";
         mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32; // Support large meshes
         meshFilter.mesh = mesh;
-        
-        // Configure mesh collider for optimal performance
-        if (meshCollider != null)
-        {
-            meshCollider.convex = false;  // Precise collision (not convex hull)
-            meshCollider.cookingOptions = MeshColliderCookingOptions.EnableMeshCleaning | 
-                                          MeshColliderCookingOptions.WeldColocatedVertices;
-        }
+        meshCollider.sharedMesh = mesh;
         
         // Initialize shared voxel data if not already done
         InitializeVoxelDataIfNeeded();
@@ -135,6 +133,7 @@ public class Chunk : MonoBehaviour
     public void RequestMeshRegeneration()
     {
         needsMeshRegeneration = true;
+        meshDataReady = false;
     }
     
     private bool needsMeshRegeneration = false;
@@ -233,7 +232,7 @@ public class Chunk : MonoBehaviour
         if (world == null)
         {
             // Return valid but empty array (job scheduler requires IsCreated == true)
-            return new NativeArray<BlockType>(0, Allocator.TempJob);
+            return new NativeArray<BlockType>(0, Allocator.TempJob, NativeArrayOptions.ClearMemory);
         }
         
         int3 neighborPos = ChunkPosition + offset;
@@ -247,7 +246,20 @@ public class Chunk : MonoBehaviour
         
         dependency = neighborChunk.GetTerrainGenerationHandle();
 
-        return neighborChunk.GetBlocksArrayUnsafe();
+        if (!neighborChunk.IsTerrainDataReady)
+        {
+            return new NativeArray<BlockType>(0, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+        }
+
+        var source = neighborChunk.GetBlocksArrayUnsafe();
+        if (!source.IsCreated || source.Length == 0)
+        {
+            return new NativeArray<BlockType>(0, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+        }
+
+        var copy = new NativeArray<BlockType>(source.Length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+        NativeArray<BlockType>.Copy(source, copy, source.Length);
+        return copy;
     }
     
     /// <summary>
@@ -280,15 +292,12 @@ public class Chunk : MonoBehaviour
         uvs.Dispose();
         normals.Dispose();
         
-        // Dispose neighbor arrays (only if they were allocated as TempJob in GetNeighborChunkData)
-        // These are either empty TempJob arrays or references to existing chunk data
-        // Only dispose the empty TempJob ones (Length == 0 means we allocated them)
-        if (neighborBack.IsCreated && neighborBack.Length == 0) neighborBack.Dispose();
-        if (neighborFront.IsCreated && neighborFront.Length == 0) neighborFront.Dispose();
-        if (neighborTop.IsCreated && neighborTop.Length == 0) neighborTop.Dispose();
-        if (neighborBottom.IsCreated && neighborBottom.Length == 0) neighborBottom.Dispose();
-        if (neighborLeft.IsCreated && neighborLeft.Length == 0) neighborLeft.Dispose();
-        if (neighborRight.IsCreated && neighborRight.Length == 0) neighborRight.Dispose();
+        DisposeNeighborArray(neighborBack);
+        DisposeNeighborArray(neighborFront);
+        DisposeNeighborArray(neighborTop);
+        DisposeNeighborArray(neighborBottom);
+        DisposeNeighborArray(neighborLeft);
+        DisposeNeighborArray(neighborRight);
     }
     
     /// <summary>
@@ -325,23 +334,30 @@ public class Chunk : MonoBehaviour
         mesh.normals = normalArray;
         mesh.SetTriangles(triangleArray, 0);
         
-        // Recalculate bounds for culling and collision
+        // Recalculate bounds for culling
         mesh.RecalculateBounds();
-        
-        // Update mesh collider ONLY if mesh has vertices (avoid warnings for empty chunks)
+
         if (meshCollider != null)
         {
-            if (vertices.Length > 0 && triangles.Length > 0)
+            if (vertices.Length == 0 || triangles.Length == 0)
             {
-                // Valid mesh - update collider
-                meshCollider.sharedMesh = null; // Clear first to force rebuild
-                meshCollider.sharedMesh = mesh; // Assign new mesh (Unity cooks collision mesh automatically)
+                meshCollider.sharedMesh = null;
             }
             else
             {
-                // Empty chunk (all air) - clear collider to avoid warnings and save memory
                 meshCollider.sharedMesh = null;
+                meshCollider.sharedMesh = mesh;
             }
+        }
+
+        meshDataReady = true;
+    }
+
+    private static void DisposeNeighborArray(NativeArray<BlockType> neighborArray)
+    {
+        if (neighborArray.IsCreated)
+        {
+            neighborArray.Dispose();
         }
     }
     
@@ -403,6 +419,11 @@ public class Chunk : MonoBehaviour
     /// Check if terrain generation job is currently running on worker threads.
     /// </summary>
     public bool IsTerrainJobRunning => isTerrainJobRunning;
+    
+    /// <summary>
+    /// Indicates whether the current mesh (and collider) has been generated.
+    /// </summary>
+    public bool IsMeshReady => meshDataReady;
 
     internal void ReceiveTerrainGenerationJob(JobHandle jobHandle)
     {
@@ -410,6 +431,7 @@ public class Chunk : MonoBehaviour
         isTerrainJobRunning = true;
         terrainDataReady = false;
         needsMeshRegeneration = true;
+        meshDataReady = false;
     }
 
     /// <summary>
@@ -425,6 +447,8 @@ public class Chunk : MonoBehaviour
             isTerrainJobRunning = false;
             terrainDataReady = true;
             terrainJobHandle = default;
+
+            world?.NotifyNeighborsToRegenerate(ChunkPosition);
         }
     }
     
@@ -471,18 +495,35 @@ public class Chunk : MonoBehaviour
     }
     
     /// <summary>
+    /// Complete all pending jobs in this chunk (for safe cleanup)
+    /// </summary>
+    public void CompleteAllJobs()
+    {
+        // Complete mesh job if running
+        if (isMeshJobRunning)
+        {
+            meshJobHandle.Complete();
+            isMeshJobRunning = false;
+            meshDataReady = mesh != null;
+        }
+        
+        // Complete terrain job if running
+        if (isTerrainJobRunning)
+        {
+            terrainJobHandle.Complete();
+            isTerrainJobRunning = false;
+            terrainDataReady = true;
+            terrainJobHandle = default;
+        }
+    }
+    
+    /// <summary>
     /// Cleanup when chunk is destroyed
     /// </summary>
     private void OnDestroy()
     {
         // Complete any running jobs
-        if (isMeshJobRunning)
-        {
-            meshJobHandle.Complete();
-            isMeshJobRunning = false;
-        }
-
-        ApplyTerrainDataFromJob();
+        CompleteAllJobs();
         
         // Dispose native arrays
         if (isBlocksAllocated && blocks.IsCreated)

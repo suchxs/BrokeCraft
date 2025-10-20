@@ -25,6 +25,10 @@ public class World : MonoBehaviour
     [Tooltip("Generate chunks on start")]
     public bool generateOnStart = true;
     
+    [Tooltip("Maximum number of new chunks to instantiate per frame when streaming.")]
+    [Range(1, 32)]
+    public int maxChunkCreationsPerFrame = 6;
+    
     [Header("Terrain Generation")]
     [Tooltip("Procedural terrain parameters (Perlin FBM with Burst jobs)")]
     public TerrainGenerationSettings terrainSettings = TerrainGenerationSettings.CreateDefault();
@@ -35,6 +39,8 @@ public class World : MonoBehaviour
     
     // Dictionary to store all active chunks
     private Dictionary<int3, Chunk> chunks = new Dictionary<int3, Chunk>();
+    private readonly Queue<int3> chunkCreationQueue = new Queue<int3>();
+    private readonly HashSet<int3> pendingChunkCreations = new HashSet<int3>();
     
     // Parent transform for organization
     private Transform chunksParent;
@@ -57,6 +63,11 @@ public class World : MonoBehaviour
         {
             GenerateWorld();
         }
+    }
+    
+    private void Update()
+    {
+        ProcessChunkCreationQueue();
     }
     
     /// <summary>
@@ -110,7 +121,14 @@ public class World : MonoBehaviour
                     // Create chunk if it doesn't exist
                     if (!chunks.ContainsKey(chunkPos))
                     {
-                        CreateChunk(chunkPos);
+                        if (chunkPos.Equals(centerChunkPos))
+                        {
+                            CreateChunk(chunkPos);
+                        }
+                        else
+                        {
+                            EnqueueChunkCreation(chunkPos);
+                        }
                     }
                 }
             }
@@ -136,10 +154,11 @@ public class World : MonoBehaviour
             int3 chunkPos = kvp.Key;
             int3 distance = math.abs(chunkPos - centerChunkPos);
             
-            // Check if chunk is outside view distance
-            if (distance.x >= horizontalHalf || 
-                distance.z >= horizontalHalf || 
-                distance.y >= verticalHalf)
+            // Changed >= to > to prevent edge chunks from constantly unloading/reloading
+            // Add +1 buffer to avoid flickering at boundaries
+            if (distance.x > horizontalHalf + 1 || 
+                distance.z > horizontalHalf + 1 || 
+                distance.y > verticalHalf + 1)
             {
                 chunksToRemove.Add(chunkPos);
             }
@@ -151,10 +170,7 @@ public class World : MonoBehaviour
             RemoveChunk(pos);
         }
         
-        if (chunksToRemove.Count > 0)
-        {
-            Debug.Log($"[Cubic Chunks] Unloaded {chunksToRemove.Count} distant chunks");
-        }
+        // Removed debug spam - use F3 overlay to see chunk count
     }
     
     /// <summary>
@@ -211,7 +227,6 @@ public class World : MonoBehaviour
             chunkObj.transform.parent = chunksParent;
             chunkObj.AddComponent<MeshFilter>();
             chunkObj.AddComponent<MeshRenderer>();
-            chunkObj.AddComponent<MeshCollider>(); // Add collider for physics
             chunkObj.AddComponent<Chunk>();
         }
         
@@ -228,10 +243,51 @@ public class World : MonoBehaviour
         return chunk;
     }
     
+    private void EnqueueChunkCreation(int3 chunkPosition)
+    {
+        if (chunks.ContainsKey(chunkPosition))
+        {
+            return;
+        }
+
+        if (pendingChunkCreations.Contains(chunkPosition))
+        {
+            return;
+        }
+
+        pendingChunkCreations.Add(chunkPosition);
+        chunkCreationQueue.Enqueue(chunkPosition);
+    }
+    
+    private void ProcessChunkCreationQueue()
+    {
+        if (chunkCreationQueue.Count == 0)
+        {
+            return;
+        }
+
+        int processed = 0;
+        int maxPerFrame = math.max(1, maxChunkCreationsPerFrame);
+
+        while (processed < maxPerFrame && chunkCreationQueue.Count > 0)
+        {
+            int3 chunkPosition = chunkCreationQueue.Dequeue();
+            pendingChunkCreations.Remove(chunkPosition);
+
+            if (chunks.ContainsKey(chunkPosition))
+            {
+                continue;
+            }
+
+            CreateChunk(chunkPosition);
+            processed++;
+        }
+    }
+    
     /// <summary>
     /// Notify neighboring chunks to regenerate their meshes when a new chunk is added
     /// </summary>
-    private void NotifyNeighborsToRegenerate(int3 chunkPosition)
+    internal void NotifyNeighborsToRegenerate(int3 chunkPosition)
     {
         // Check all 6 neighboring positions
         int3[] neighborOffsets = new int3[]
@@ -266,6 +322,7 @@ public class World : MonoBehaviour
         
         Chunk chunk = chunks[chunkPosition];
         chunks.Remove(chunkPosition);
+        pendingChunkCreations.Remove(chunkPosition);
         
         // Notify neighbors to regenerate meshes (edges may need to render faces now)
         NotifyNeighborsToRegenerate(chunkPosition);
@@ -391,13 +448,33 @@ public class World : MonoBehaviour
     
     private void OnApplicationQuit()
     {
+        // Complete all pending jobs before disposing static data
+        CompleteAllChunkJobs();
+        
         // Cleanup static voxel data
         Chunk.DisposeStaticData();
     }
     
     private void OnDestroy()
     {
+        // Complete all pending jobs before disposing static data
+        CompleteAllChunkJobs();
+        
         // Cleanup static voxel data
         Chunk.DisposeStaticData();
+    }
+    
+    /// <summary>
+    /// Complete all pending jobs in all chunks to ensure safe cleanup
+    /// </summary>
+    private void CompleteAllChunkJobs()
+    {
+        foreach (var chunk in chunks.Values)
+        {
+            if (chunk != null)
+            {
+                chunk.CompleteAllJobs();
+            }
+        }
     }
 }

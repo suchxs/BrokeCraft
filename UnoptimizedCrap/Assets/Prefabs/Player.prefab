@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 361135180112602991}
   - component: {fileID: 6724794766240731121}
   - component: {fileID: 4622102373901533098}
+  - component: {fileID: -6424649533996757292}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -73,18 +74,41 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PlayerController
   world: {fileID: 0}
   cameraTransform: {fileID: 0}
+  moveAction: {fileID: -1680190386980627800, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  lookAction: {fileID: -5630151704836100654, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  jumpAction: {fileID: -2099379676528639254, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  sprintAction: {fileID: -7471211009204490832, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  sneakAction: {fileID: 7040659881675835329, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   walkSpeed: 4.317
   sprintSpeed: 5.612
   sneakSpeed: 1.295
   jumpHeight: 1.25
   gravity: 32
-  mouseSensitivity: 2
+  controllerHeight: 1.8
+  controllerRadius: 0.3
+  stepOffset: 0.5
+  slopeLimit: 45
+  mouseSensitivity: 0.5
   maxLookAngle: 90
-  playerHeight: 1.8
   eyeHeight: 1.62
-  playerWidth: 0.6
   enableDynamicLoading: 1
   chunkUpdateInterval: 0.5
+--- !u!114 &-6424649533996757292
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7370902781878625683}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fd6886165ce4e154487b73e7e6747a92, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DebugOverlay
+  world: {fileID: 0}
+  player: {fileID: 361135180112602991}
+  textColor: {r: 1, g: 1, b: 1, a: 1}
+  backgroundColor: {r: 0, g: 0, b: 0, a: 0.5}
 --- !u!1 &8673510183976691635
 GameObject:
   m_ObjectHideFlags: 0

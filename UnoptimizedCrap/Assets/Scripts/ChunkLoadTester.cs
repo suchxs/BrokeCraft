@@ -33,7 +33,7 @@ public class ChunkLoadTester : MonoBehaviour
     {
         if (world == null)
         {
-            world = FindObjectOfType<World>();
+            world = FindFirstObjectByType<World>();
         }
         
         if (world == null)
@@ -148,21 +148,6 @@ public class ChunkLoadTester : MonoBehaviour
         Debug.Log("  WASD - Move horizontally");
         Debug.Log("  Q/E - Move vertically (up/down)");
         Debug.Log("  I - Show debug info");
-    }
-    
-    private void OnGUI()
-    {
-        int3 currentChunk = CubicChunkHelper.WorldFloatPosToChunkPos(transform.position);
-        int worldY = (int)transform.position.y;
-        
-        GUILayout.BeginArea(new Rect(10, 10, 300, 150));
-        GUILayout.Box("Cubic Chunks - Debug Info");
-        GUILayout.Label($"Chunk: {currentChunk}");
-        GUILayout.Label($"World Y: {worldY}");
-        GUILayout.Label($"Loaded: {world.GetLoadedChunkCount()} chunks");
-        GUILayout.Label($"Dynamic Loading: {(enableDynamicLoading ? "ON" : "OFF")}");
-        GUILayout.Label("\nWASD:Move | Q/E:Up/Down | I:Info");
-        GUILayout.EndArea();
+        Debug.Log("  F3 - Toggle debug overlay");
     }
 }
-

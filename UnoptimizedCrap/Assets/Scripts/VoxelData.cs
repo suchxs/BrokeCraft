@@ -41,8 +41,8 @@ public static class VoxelData
     public const float PlayerWidth = 0.6f;          // blocks
     
     // CharacterController settings for precise Minecraft-like collision
-    public const float PlayerSkinWidth = 0.001f;    // Minimal skin for precise collision
-    public const float PlayerMinMoveDistance = 0f;  // Allow micro-movements
+    public const float PlayerSkinWidth = 0.04f;     // Small but safe skin to avoid tunnelling
+    public const float PlayerMinMoveDistance = 0.001f;  // Allow micro-movements
     public const float PlayerStepOffset = 0.5f;     // Can step up half block
     public const float PlayerSlopeLimit = 45f;      // Standard slope limit
     
