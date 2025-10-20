@@ -103,27 +103,27 @@ public struct ChunkMeshBuilder : IJob
         switch (faceIndex)
         {
             case 0: // Back (-Z)
-                if (NeighborBack.Length == 0) return true; // No neighbor chunk
+                if (!NeighborBack.IsCreated || NeighborBack.Length == 0) return true; // No neighbor chunk
                 return GetNeighborBlock(NeighborBack, x, y, VoxelData.ChunkDepth - 1) == BlockType.Air;
                 
             case 1: // Front (+Z)
-                if (NeighborFront.Length == 0) return true;
+                if (!NeighborFront.IsCreated || NeighborFront.Length == 0) return true;
                 return GetNeighborBlock(NeighborFront, x, y, 0) == BlockType.Air;
                 
             case 2: // Top (+Y)
-                if (NeighborTop.Length == 0) return true;
+                if (!NeighborTop.IsCreated || NeighborTop.Length == 0) return true;
                 return GetNeighborBlock(NeighborTop, x, 0, z) == BlockType.Air;
                 
             case 3: // Bottom (-Y)
-                if (NeighborBottom.Length == 0) return true;
+                if (!NeighborBottom.IsCreated || NeighborBottom.Length == 0) return true;
                 return GetNeighborBlock(NeighborBottom, x, VoxelData.ChunkHeight - 1, z) == BlockType.Air;
                 
             case 4: // Left (-X)
-                if (NeighborLeft.Length == 0) return true;
+                if (!NeighborLeft.IsCreated || NeighborLeft.Length == 0) return true;
                 return GetNeighborBlock(NeighborLeft, VoxelData.ChunkWidth - 1, y, z) == BlockType.Air;
                 
             case 5: // Right (+X)
-                if (NeighborRight.Length == 0) return true;
+                if (!NeighborRight.IsCreated || NeighborRight.Length == 0) return true;
                 return GetNeighborBlock(NeighborRight, 0, y, z) == BlockType.Air;
         }
         
@@ -136,7 +136,7 @@ public struct ChunkMeshBuilder : IJob
     /// </summary>
     private BlockType GetNeighborBlock(NativeArray<BlockType> neighborData, int x, int y, int z)
     {
-        if (neighborData.Length == 0) return BlockType.Air;
+        if (!neighborData.IsCreated || neighborData.Length == 0) return BlockType.Air;
         
         int index = VoxelData.GetBlockIndex(x, y, z);
         if (index >= 0 && index < neighborData.Length)
@@ -230,4 +230,3 @@ public static class ChunkMeshHelper
         normals = new NativeArray<float3>(VoxelData.FaceNormals, allocator);
     }
 }
-

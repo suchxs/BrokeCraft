@@ -1,5 +1,6 @@
 using Unity.Collections;
 using Unity.Jobs;
+using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -28,6 +29,11 @@ public class Chunk : MonoBehaviour
     
     // Reference to world for querying neighboring chunks
     private World world;
+
+    // Terrain generation job state
+    private JobHandle terrainJobHandle;
+    private bool isTerrainJobRunning = false;
+    private bool terrainDataReady = false;
     
     // Voxel lookup data as bytes (shared across all chunks, allocated once)
     // Using byte types for 4x memory reduction
@@ -76,10 +82,7 @@ public class Chunk : MonoBehaviour
         }
         
         // Generate initial terrain data
-        GenerateTerrainData();
-        
-        // Start mesh generation
-        StartMeshGeneration();
+        ScheduleTerrainGeneration();
     }
     
     /// <summary>
@@ -87,59 +90,26 @@ public class Chunk : MonoBehaviour
     /// Uses world Y position to determine block types (supports unlimited height).
     /// Terrain surface is at world Y = 64 (sea level).
     /// </summary>
-    private void GenerateTerrainData()
+    private void ScheduleTerrainGeneration()
     {
-        // World Y coordinates for this chunk
-        int chunkWorldYStart = ChunkPosition.y * VoxelData.ChunkHeight;
-        
-        // Terrain generation constants (world Y coordinates)
-        const int BEDROCK_LEVEL = 0;
-        const int TERRAIN_SURFACE = 64;
-        const int DIRT_DEPTH = 4;
-        
-        for (int x = 0; x < VoxelData.ChunkWidth; x++)
+        TerrainGenerationSettings settings = world != null 
+            ? world.GetTerrainGenerationSettings()
+            : TerrainGenerationSettings.CreateDefault();
+
+        var job = new ChunkTerrainGenerationJob
         {
-            for (int z = 0; z < VoxelData.ChunkDepth; z++)
-            {
-                for (int y = 0; y < VoxelData.ChunkHeight; y++)
-                {
-                    int index = VoxelData.GetBlockIndex(x, y, z);
-                    int worldY = chunkWorldYStart + y;
-                    
-                    // Generate based on world Y coordinate
-                    if (worldY == BEDROCK_LEVEL)
-                    {
-                        // Bedrock only at Y=0
-                        blocks[index] = BlockType.Bedrock;
-                    }
-                    else if (worldY < BEDROCK_LEVEL)
-                    {
-                        // Below bedrock = air (for caves/void)
-                        blocks[index] = BlockType.Air;
-                    }
-                    else if (worldY > TERRAIN_SURFACE)
-                    {
-                        // Above terrain = air
-                        blocks[index] = BlockType.Air;
-                    }
-                    else if (worldY == TERRAIN_SURFACE)
-                    {
-                        // Surface layer = grass
-                        blocks[index] = BlockType.Grass;
-                    }
-                    else if (worldY > TERRAIN_SURFACE - DIRT_DEPTH)
-                    {
-                        // 4 blocks below surface = dirt
-                        blocks[index] = BlockType.Dirt;
-                    }
-                    else
-                    {
-                        // Everything else below = stone
-                        blocks[index] = BlockType.Stone;
-                    }
-                }
-            }
-        }
+            Blocks = blocks,
+            ChunkPosition = ChunkPosition,
+            NoiseSettings = settings.ToNoiseSettings(),
+            SoilDepth = math.max(1, settings.soilDepth),
+            BedrockDepth = math.max(1, settings.bedrockDepth),
+            AlpineNormalizedThreshold = math.clamp(settings.alpineNormalizedThreshold, 0f, 1f),
+            SteepRedistributionThreshold = math.clamp(settings.steepRedistributionThreshold, 0f, 1f)
+        };
+
+        int columnCount = VoxelData.ChunkWidth * VoxelData.ChunkDepth;
+        int batchSize = math.max(1, columnCount / math.max(1, JobsUtility.JobWorkerCount));
+        ReceiveTerrainGenerationJob(job.ScheduleParallel(columnCount, batchSize, default));
     }
     
     /// <summary>
@@ -154,8 +124,13 @@ public class Chunk : MonoBehaviour
     
     void Update()
     {
+        if (isTerrainJobRunning && terrainJobHandle.IsCompleted)
+        {
+            ApplyTerrainDataFromJob();
+        }
+        
         // Regenerate mesh if requested and not already running
-        if (needsMeshRegeneration && !isMeshJobRunning)
+        if (terrainDataReady && needsMeshRegeneration && !isMeshJobRunning)
         {
             needsMeshRegeneration = false;
             StartMeshGeneration();
@@ -176,16 +151,25 @@ public class Chunk : MonoBehaviour
         var triangles = new NativeList<int>(Allocator.TempJob);
         var uvs = new NativeList<float2>(Allocator.TempJob);
         var normals = new NativeList<float3>(Allocator.TempJob);
+
+        // Include terrain job as dependency if still running
+        JobHandle meshDependencies = terrainDataReady ? default : terrainJobHandle;
         
         // Get neighboring chunk data for cross-chunk face culling
-        var neighborBack = GetNeighborChunkData(new int3(0, 0, -1));
-        var neighborFront = GetNeighborChunkData(new int3(0, 0, 1));
-        var neighborTop = GetNeighborChunkData(new int3(0, 1, 0));
-        var neighborBottom = GetNeighborChunkData(new int3(0, -1, 0));
-        var neighborLeft = GetNeighborChunkData(new int3(-1, 0, 0));
-        var neighborRight = GetNeighborChunkData(new int3(1, 0, 0));
+        JobHandle neighborHandle;
+        var neighborBack = GetNeighborChunkData(new int3(0, 0, -1), out neighborHandle);
+        meshDependencies = JobHandle.CombineDependencies(meshDependencies, neighborHandle);
+        var neighborFront = GetNeighborChunkData(new int3(0, 0, 1), out neighborHandle);
+        meshDependencies = JobHandle.CombineDependencies(meshDependencies, neighborHandle);
+        var neighborTop = GetNeighborChunkData(new int3(0, 1, 0), out neighborHandle);
+        meshDependencies = JobHandle.CombineDependencies(meshDependencies, neighborHandle);
+        var neighborBottom = GetNeighborChunkData(new int3(0, -1, 0), out neighborHandle);
+        meshDependencies = JobHandle.CombineDependencies(meshDependencies, neighborHandle);
+        var neighborLeft = GetNeighborChunkData(new int3(-1, 0, 0), out neighborHandle);
+        meshDependencies = JobHandle.CombineDependencies(meshDependencies, neighborHandle);
+        var neighborRight = GetNeighborChunkData(new int3(1, 0, 0), out neighborHandle);
+        meshDependencies = JobHandle.CombineDependencies(meshDependencies, neighborHandle);
         
-        // Create and schedule the mesh generation job with neighbor data
         var job = new ChunkMeshBuilder
         {
             Blocks = blocks,
@@ -207,34 +191,33 @@ public class Chunk : MonoBehaviour
             NeighborRight = neighborRight
         };
         
-        meshJobHandle = job.Schedule();
+        meshJobHandle = job.Schedule(meshDependencies);
         isMeshJobRunning = true;
         
         // Store references for completion
-        StartCoroutine(CompleteMeshGeneration(vertices, triangles, uvs, normals, 
-            neighborBack, neighborFront, neighborTop, neighborBottom, neighborLeft, neighborRight));
+        StartCoroutine(CompleteMeshGeneration(vertices, triangles, uvs, normals));
     }
     
     /// <summary>
     /// Get block data from neighboring chunk for cross-chunk face culling.
     /// Returns empty array if neighbor doesn't exist.
     /// </summary>
-    private NativeArray<BlockType> GetNeighborChunkData(int3 offset)
+    private NativeArray<BlockType> GetNeighborChunkData(int3 offset, out JobHandle dependency)
     {
+        dependency = default;
+        
         if (world == null)
-            return new NativeArray<BlockType>(0, Allocator.TempJob);
+            return default;
         
         int3 neighborPos = ChunkPosition + offset;
         Chunk neighborChunk = world.GetChunkAt(neighborPos);
         
         if (neighborChunk == null)
-            return new NativeArray<BlockType>(0, Allocator.TempJob);
+            return default;
         
-        // Copy neighbor's block data to new NativeArray for job
-        var neighborData = new NativeArray<BlockType>(VoxelData.ChunkSize, Allocator.TempJob);
-        NativeArray<BlockType>.Copy(neighborChunk.blocks, neighborData);
-        
-        return neighborData;
+        dependency = neighborChunk.GetTerrainGenerationHandle();
+
+        return neighborChunk.GetBlocksArrayUnsafe();
     }
     
     /// <summary>
@@ -244,13 +227,7 @@ public class Chunk : MonoBehaviour
         NativeList<float3> vertices,
         NativeList<int> triangles,
         NativeList<float2> uvs,
-        NativeList<float3> normals,
-        NativeArray<BlockType> neighborBack,
-        NativeArray<BlockType> neighborFront,
-        NativeArray<BlockType> neighborTop,
-        NativeArray<BlockType> neighborBottom,
-        NativeArray<BlockType> neighborLeft,
-        NativeArray<BlockType> neighborRight)
+        NativeList<float3> normals)
     {
         // Wait for job to complete
         yield return new WaitUntil(() => meshJobHandle.IsCompleted);
@@ -266,14 +243,6 @@ public class Chunk : MonoBehaviour
         triangles.Dispose();
         uvs.Dispose();
         normals.Dispose();
-        
-        // Dispose neighbor data arrays
-        if (neighborBack.IsCreated) neighborBack.Dispose();
-        if (neighborFront.IsCreated) neighborFront.Dispose();
-        if (neighborTop.IsCreated) neighborTop.Dispose();
-        if (neighborBottom.IsCreated) neighborBottom.Dispose();
-        if (neighborLeft.IsCreated) neighborLeft.Dispose();
-        if (neighborRight.IsCreated) neighborRight.Dispose();
     }
     
     /// <summary>
@@ -319,6 +288,11 @@ public class Chunk : MonoBehaviour
     /// </summary>
     public BlockType GetBlock(int x, int y, int z)
     {
+        if (!terrainDataReady)
+        {
+        ApplyTerrainDataFromJob();
+        }
+        
         if (!VoxelData.IsBlockInChunk(x, y, z))
             return BlockType.Air;
         
@@ -330,7 +304,43 @@ public class Chunk : MonoBehaviour
     /// </summary>
     public NativeArray<BlockType> GetBlocksArray()
     {
+        if (!terrainDataReady)
+        {
+            ApplyTerrainDataFromJob();
+        }
+        
         return blocks;
+    }
+
+    private NativeArray<BlockType> GetBlocksArrayUnsafe()
+    {
+        return blocks;
+    }
+
+    public JobHandle GetTerrainGenerationHandle()
+    {
+        return terrainJobHandle;
+    }
+
+    public bool IsTerrainDataReady => terrainDataReady;
+
+    internal void ReceiveTerrainGenerationJob(JobHandle jobHandle)
+    {
+        terrainJobHandle = jobHandle;
+        isTerrainJobRunning = true;
+        terrainDataReady = false;
+        needsMeshRegeneration = true;
+    }
+
+    private void ApplyTerrainDataFromJob()
+    {
+        if (isTerrainJobRunning)
+        {
+            terrainJobHandle.Complete();
+            isTerrainJobRunning = false;
+            terrainDataReady = true;
+            terrainJobHandle = default;
+        }
     }
     
     /// <summary>
@@ -340,6 +350,11 @@ public class Chunk : MonoBehaviour
     {
         if (!VoxelData.IsBlockInChunk(x, y, z))
             return;
+
+        if (!terrainDataReady)
+        {
+            ApplyTerrainDataFromJob();
+        }
         
         blocks[VoxelData.GetBlockIndex(x, y, z)] = blockType;
         
@@ -378,6 +393,8 @@ public class Chunk : MonoBehaviour
             meshJobHandle.Complete();
             isMeshJobRunning = false;
         }
+
+        ApplyTerrainDataFromJob();
         
         // Dispose native arrays
         if (isBlocksAllocated && blocks.IsCreated)
@@ -404,4 +421,3 @@ public class Chunk : MonoBehaviour
         isVoxelDataInitialized = false;
     }
 }
-

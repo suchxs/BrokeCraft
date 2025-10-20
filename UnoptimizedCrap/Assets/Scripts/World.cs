@@ -25,6 +25,10 @@ public class World : MonoBehaviour
     [Tooltip("Generate chunks on start")]
     public bool generateOnStart = true;
     
+    [Header("Terrain Generation")]
+    [Tooltip("Procedural terrain parameters (Perlin FBM with Burst jobs)")]
+    public TerrainGenerationSettings terrainSettings = TerrainGenerationSettings.CreateDefault();
+    
     [Header("World Origin")]
     [Tooltip("Center chunk position for initial generation")]
     public int3 worldOriginChunk = new int3(0, 4, 0); // Start at Y=4 so we're near terrain surface (Y=64 world coord)
@@ -168,6 +172,14 @@ public class World : MonoBehaviour
     public int GetLoadedChunkCount()
     {
         return chunks.Count;
+    }
+
+    /// <summary>
+    /// Get current terrain generation settings.
+    /// </summary>
+    public TerrainGenerationSettings GetTerrainGenerationSettings()
+    {
+        return terrainSettings;
     }
     
     /// <summary>
@@ -347,4 +359,3 @@ public class World : MonoBehaviour
         Chunk.DisposeStaticData();
     }
 }
-
