@@ -17,6 +17,35 @@ public static class VoxelData
     // Total blocks per chunk
     public const int ChunkSize = ChunkWidth * ChunkHeight * ChunkDepth;
     
+    // Terrain generation constants
+    public const int MinWorldHeight = -64;     // Minecraft-style build limit (bottom)
+    public const int MaxWorldHeight = 320;     // Minecraft-style build limit (top)
+    public const int SeaLevel = 64;            // Default water level
+    
+    // Default terrain layer depths
+    public const int DefaultSoilDepth = 4;
+    public const int DefaultBedrockDepth = 1;
+    public const int MinSoilDepth = 1;
+    public const int MaxSoilDepth = 8;
+    public const int MinBedrockDepth = 1;
+    public const int MaxBedrockDepth = 4;
+    
+    // Player physics constants (Minecraft Java Edition values)
+    public const float PlayerWalkSpeed = 4.317f;    // m/s
+    public const float PlayerSprintSpeed = 5.612f;  // m/s
+    public const float PlayerSneakSpeed = 1.295f;   // m/s
+    public const float PlayerJumpHeight = 1.25f;    // blocks
+    public const float PlayerGravity = 32f;         // m/s² (Minecraft gravity)
+    public const float PlayerHeight = 1.8f;         // blocks
+    public const float PlayerEyeHeight = 1.62f;     // blocks from ground
+    public const float PlayerWidth = 0.6f;          // blocks
+    
+    // CharacterController settings for precise Minecraft-like collision
+    public const float PlayerSkinWidth = 0.001f;    // Minimal skin for precise collision
+    public const float PlayerMinMoveDistance = 0f;  // Allow micro-movements
+    public const float PlayerStepOffset = 0.5f;     // Can step up half block
+    public const float PlayerSlopeLimit = 45f;      // Standard slope limit
+    
     // Texture atlas configuration
     // Complete atlas: 1083 textures in 33x33 grid (528x528px, 16px per texture)
     // Built from ALL Minecraft block textures for future-proofing
@@ -41,6 +70,12 @@ public static class VoxelData
         Left = 4,   // -X
         Right = 5   // +X
     }
+    
+    // Mesh generation constants
+    public const int VerticesPerFace = 4;      // Quad face = 4 vertices
+    public const int TrianglesPerFace = 2;     // Quad = 2 triangles
+    public const int IndicesPerTriangle = 3;   // Triangle = 3 vertex indices
+    public const int IndicesPerFace = 6;       // 2 triangles * 3 indices = 6
     
     // Voxel vertices as bytes (8 corners of a cube)
     // Using byte3 for massive memory savings - voxel coords are always 0 or 1

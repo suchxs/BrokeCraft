@@ -32,6 +32,9 @@ public struct ChunkTerrainGenerationJob : IJobFor
 
         TerrainHeightSample sample = TerrainNoise.SampleHeight(new float2(worldX, worldZ), NoiseSettings);
         int terrainHeight = (int)math.floor(sample.Height);
+        
+        // Clamp terrain height to valid world bounds to prevent edge case bugs
+        terrainHeight = math.clamp(terrainHeight, VoxelData.MinWorldHeight, VoxelData.MaxWorldHeight);
 
         int chunkWorldYStart = ChunkPosition.y * chunkHeight;
         int blockIndex = x + chunkWidth * (chunkHeight * z);
@@ -48,14 +51,15 @@ public struct ChunkTerrainGenerationJob : IJobFor
 
     private BlockType ResolveBlockType(int worldY, int terrainHeight, float normalized, float redistributed)
     {
+        // Bedrock layer at bottom of world
         if (worldY <= BedrockDepth)
             return BlockType.Bedrock;
 
+        // Air above terrain surface
         if (worldY > terrainHeight)
-        {
             return BlockType.Air;
-        }
 
+        // Surface layer - grass or stone based on biome conditions
         int depthFromSurface = terrainHeight - worldY;
         if (depthFromSurface == 0)
         {
@@ -64,11 +68,11 @@ public struct ChunkTerrainGenerationJob : IJobFor
             return (isAlpine || isSteep) ? BlockType.Stone : BlockType.Grass;
         }
 
+        // Soil layer beneath grass
         if (depthFromSurface <= SoilDepth)
-        {
             return BlockType.Dirt;
-        }
 
+        // Deep underground - stone
         return BlockType.Stone;
     }
 }

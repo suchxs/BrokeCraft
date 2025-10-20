@@ -27,8 +27,8 @@ public struct TerrainGenerationSettings
     public uint seed;
 
     [Header("Block Layers")]
-    [Range(1, 8)] public int soilDepth;
-    [Range(1, 4)] public int bedrockDepth;
+    [Range(VoxelData.MinSoilDepth, VoxelData.MaxSoilDepth)] public int soilDepth;
+    [Range(VoxelData.MinBedrockDepth, VoxelData.MaxBedrockDepth)] public int bedrockDepth;
     [Range(0f, 1f)] public float alpineNormalizedThreshold;
     [Range(0f, 1f)] public float steepRedistributionThreshold;
 
@@ -78,8 +78,8 @@ public struct TerrainGenerationSettings
             maxHeight = TerrainNoiseSettings.Default.maxHeight,
             offset = Vector2.zero,
             seed = TerrainNoiseSettings.Default.seed,
-            soilDepth = 4,
-            bedrockDepth = 1,
+            soilDepth = VoxelData.DefaultSoilDepth,
+            bedrockDepth = VoxelData.DefaultBedrockDepth,
             alpineNormalizedThreshold = 0.72f,
             steepRedistributionThreshold = 0.35f
         };

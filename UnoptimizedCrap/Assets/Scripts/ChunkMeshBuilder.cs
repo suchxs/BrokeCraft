@@ -102,27 +102,27 @@ public struct ChunkMeshBuilder : IJob
         // Determine which neighbor array to check and local position in that chunk
         switch (faceIndex)
         {
-            case 0: // Back (-Z)
+            case (int)VoxelData.Face.Back: // Back (-Z)
                 if (!NeighborBack.IsCreated || NeighborBack.Length == 0) return true; // No neighbor chunk
                 return GetNeighborBlock(NeighborBack, x, y, VoxelData.ChunkDepth - 1) == BlockType.Air;
                 
-            case 1: // Front (+Z)
+            case (int)VoxelData.Face.Front: // Front (+Z)
                 if (!NeighborFront.IsCreated || NeighborFront.Length == 0) return true;
                 return GetNeighborBlock(NeighborFront, x, y, 0) == BlockType.Air;
                 
-            case 2: // Top (+Y)
+            case (int)VoxelData.Face.Top: // Top (+Y)
                 if (!NeighborTop.IsCreated || NeighborTop.Length == 0) return true;
                 return GetNeighborBlock(NeighborTop, x, 0, z) == BlockType.Air;
                 
-            case 3: // Bottom (-Y)
+            case (int)VoxelData.Face.Bottom: // Bottom (-Y)
                 if (!NeighborBottom.IsCreated || NeighborBottom.Length == 0) return true;
                 return GetNeighborBlock(NeighborBottom, x, VoxelData.ChunkHeight - 1, z) == BlockType.Air;
                 
-            case 4: // Left (-X)
+            case (int)VoxelData.Face.Left: // Left (-X)
                 if (!NeighborLeft.IsCreated || NeighborLeft.Length == 0) return true;
                 return GetNeighborBlock(NeighborLeft, VoxelData.ChunkWidth - 1, y, z) == BlockType.Air;
                 
-            case 5: // Right (+X)
+            case (int)VoxelData.Face.Right: // Right (+X)
                 if (!NeighborRight.IsCreated || NeighborRight.Length == 0) return true;
                 return GetNeighborBlock(NeighborRight, 0, y, z) == BlockType.Air;
         }
@@ -146,18 +146,18 @@ public struct ChunkMeshBuilder : IJob
     }
     
     /// <summary>
-    /// Add a single face to the mesh
+    /// Add a single face to the mesh (4 vertices forming a quad, split into 2 triangles)
     /// </summary>
     private void AddFace(int x, int y, int z, int faceIndex, BlockType blockType)
     {
         int vertexIndex = Vertices.Length;
         float3 blockPos = new float3(x, y, z);
         
-        // Get the 4 vertex indices for this face
-        int triOffset = faceIndex * 4;
+        // Get the vertex indices for this face from lookup table
+        int triOffset = faceIndex * VoxelData.VerticesPerFace;
         
-        // Add 4 vertices for this face
-        for (int i = 0; i < 4; i++)
+        // Add vertices for this quad face
+        for (int i = 0; i < VoxelData.VerticesPerFace; i++)
         {
             // Get vertex index from byte array
             byte vertIndexByte = VoxelTrianglesBytes[triOffset + i];
@@ -179,12 +179,12 @@ public struct ChunkMeshBuilder : IJob
         }
         
         // Add 2 triangles (6 indices) for this quad face
-        // Triangle 1: 0, 1, 2
+        // Triangle 1: vertices 0, 1, 2
         Triangles.Add(vertexIndex + 0);
         Triangles.Add(vertexIndex + 1);
         Triangles.Add(vertexIndex + 2);
         
-        // Triangle 2: 2, 1, 3
+        // Triangle 2: vertices 2, 1, 3
         Triangles.Add(vertexIndex + 2);
         Triangles.Add(vertexIndex + 1);
         Triangles.Add(vertexIndex + 3);

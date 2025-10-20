@@ -7,8 +7,9 @@ using UnityEngine;
 /// <summary>
 /// Represents a single chunk in the world.
 /// Manages block data and mesh generation using Burst-compiled jobs.
+/// Includes optimized mesh collision for player physics.
 /// </summary>
-[RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
+[RequireComponent(typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider))]
 public class Chunk : MonoBehaviour
 {
     // Block data for this chunk
@@ -18,6 +19,7 @@ public class Chunk : MonoBehaviour
     // Mesh components
     private MeshFilter meshFilter;
     private MeshRenderer meshRenderer;
+    private MeshCollider meshCollider;
     private Mesh mesh;
     
     // Job data
@@ -48,11 +50,21 @@ public class Chunk : MonoBehaviour
     {
         meshFilter = GetComponent<MeshFilter>();
         meshRenderer = GetComponent<MeshRenderer>();
+        meshCollider = GetComponent<MeshCollider>();
         
-        // Create mesh
+        // Create mesh (shared between renderer and collider for efficiency)
         mesh = new Mesh();
         mesh.name = "Chunk Mesh";
+        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32; // Support large meshes
         meshFilter.mesh = mesh;
+        
+        // Configure mesh collider for optimal performance
+        if (meshCollider != null)
+        {
+            meshCollider.convex = false;  // Precise collision (not convex hull)
+            meshCollider.cookingOptions = MeshColliderCookingOptions.EnableMeshCleaning | 
+                                          MeshColliderCookingOptions.WeldColocatedVertices;
+        }
         
         // Initialize shared voxel data if not already done
         InitializeVoxelDataIfNeeded();
@@ -74,6 +86,9 @@ public class Chunk : MonoBehaviour
         
         meshRenderer.material = material;
         
+        // Ensure chunk is on Default layer for proper collision
+        gameObject.layer = 0; // Default layer
+        
         // Allocate block data
         if (!isBlocksAllocated)
         {
@@ -86,9 +101,9 @@ public class Chunk : MonoBehaviour
     }
     
     /// <summary>
-    /// Generate terrain data for this cubic chunk.
+    /// Generate terrain data for this cubic chunk using Burst-compiled parallel job.
+    /// Schedules async generation - terrain data becomes ready when job completes in Update().
     /// Uses world Y position to determine block types (supports unlimited height).
-    /// Terrain surface is at world Y = 64 (sea level).
     /// </summary>
     private void ScheduleTerrainGeneration()
     {
@@ -101,14 +116,16 @@ public class Chunk : MonoBehaviour
             Blocks = blocks,
             ChunkPosition = ChunkPosition,
             NoiseSettings = settings.ToNoiseSettings(),
-            SoilDepth = math.max(1, settings.soilDepth),
-            BedrockDepth = math.max(1, settings.bedrockDepth),
+            SoilDepth = math.clamp(settings.soilDepth, VoxelData.MinSoilDepth, VoxelData.MaxSoilDepth),
+            BedrockDepth = math.clamp(settings.bedrockDepth, VoxelData.MinBedrockDepth, VoxelData.MaxBedrockDepth),
             AlpineNormalizedThreshold = math.clamp(settings.alpineNormalizedThreshold, 0f, 1f),
             SteepRedistributionThreshold = math.clamp(settings.steepRedistributionThreshold, 0f, 1f)
         };
 
         int columnCount = VoxelData.ChunkWidth * VoxelData.ChunkDepth;
         int batchSize = math.max(1, columnCount / math.max(1, JobsUtility.JobWorkerCount));
+        
+        // Schedule job asynchronously - will complete in Update() without blocking
         ReceiveTerrainGenerationJob(job.ScheduleParallel(columnCount, batchSize, default));
     }
     
@@ -122,14 +139,20 @@ public class Chunk : MonoBehaviour
     
     private bool needsMeshRegeneration = false;
     
+    /// <summary>
+    /// Async job tracking - checks for completed jobs without stalling.
+    /// Terrain generation and mesh generation both run on worker threads via Burst.
+    /// </summary>
     void Update()
     {
+        // Check if terrain generation job finished (non-blocking check via IsCompleted)
         if (isTerrainJobRunning && terrainJobHandle.IsCompleted)
         {
+            // Job finished - apply results without blocking (Complete() on finished job = no stall)
             ApplyTerrainDataFromJob();
         }
         
-        // Regenerate mesh if requested and not already running
+        // Start mesh generation once terrain is ready and mesh is requested
         if (terrainDataReady && needsMeshRegeneration && !isMeshJobRunning)
         {
             needsMeshRegeneration = false;
@@ -194,26 +217,33 @@ public class Chunk : MonoBehaviour
         meshJobHandle = job.Schedule(meshDependencies);
         isMeshJobRunning = true;
         
-        // Store references for completion
-        StartCoroutine(CompleteMeshGeneration(vertices, triangles, uvs, normals));
+        // Store references for completion (need to dispose neighbor arrays too)
+        StartCoroutine(CompleteMeshGeneration(vertices, triangles, uvs, normals,
+            neighborBack, neighborFront, neighborTop, neighborBottom, neighborLeft, neighborRight));
     }
     
     /// <summary>
     /// Get block data from neighboring chunk for cross-chunk face culling.
-    /// Returns empty array if neighbor doesn't exist.
+    /// Returns empty (but valid) array if neighbor doesn't exist.
     /// </summary>
     private NativeArray<BlockType> GetNeighborChunkData(int3 offset, out JobHandle dependency)
     {
         dependency = default;
         
         if (world == null)
-            return default;
+        {
+            // Return valid but empty array (job scheduler requires IsCreated == true)
+            return new NativeArray<BlockType>(0, Allocator.TempJob);
+        }
         
         int3 neighborPos = ChunkPosition + offset;
         Chunk neighborChunk = world.GetChunkAt(neighborPos);
         
         if (neighborChunk == null)
-            return default;
+        {
+            // Return valid but empty array (job scheduler requires IsCreated == true)
+            return new NativeArray<BlockType>(0, Allocator.TempJob);
+        }
         
         dependency = neighborChunk.GetTerrainGenerationHandle();
 
@@ -221,13 +251,19 @@ public class Chunk : MonoBehaviour
     }
     
     /// <summary>
-    /// Wait for job completion and apply mesh data, then dispose neighbor arrays
+    /// Wait for job completion and apply mesh data, then dispose all temporary native arrays
     /// </summary>
     private System.Collections.IEnumerator CompleteMeshGeneration(
         NativeList<float3> vertices,
         NativeList<int> triangles,
         NativeList<float2> uvs,
-        NativeList<float3> normals)
+        NativeList<float3> normals,
+        NativeArray<BlockType> neighborBack,
+        NativeArray<BlockType> neighborFront,
+        NativeArray<BlockType> neighborTop,
+        NativeArray<BlockType> neighborBottom,
+        NativeArray<BlockType> neighborLeft,
+        NativeArray<BlockType> neighborRight)
     {
         // Wait for job to complete
         yield return new WaitUntil(() => meshJobHandle.IsCompleted);
@@ -238,11 +274,21 @@ public class Chunk : MonoBehaviour
         // Apply mesh data
         ApplyMeshData(vertices, triangles, uvs, normals);
         
-        // Dispose native collections
+        // Dispose mesh data native collections
         vertices.Dispose();
         triangles.Dispose();
         uvs.Dispose();
         normals.Dispose();
+        
+        // Dispose neighbor arrays (only if they were allocated as TempJob in GetNeighborChunkData)
+        // These are either empty TempJob arrays or references to existing chunk data
+        // Only dispose the empty TempJob ones (Length == 0 means we allocated them)
+        if (neighborBack.IsCreated && neighborBack.Length == 0) neighborBack.Dispose();
+        if (neighborFront.IsCreated && neighborFront.Length == 0) neighborFront.Dispose();
+        if (neighborTop.IsCreated && neighborTop.Length == 0) neighborTop.Dispose();
+        if (neighborBottom.IsCreated && neighborBottom.Length == 0) neighborBottom.Dispose();
+        if (neighborLeft.IsCreated && neighborLeft.Length == 0) neighborLeft.Dispose();
+        if (neighborRight.IsCreated && neighborRight.Length == 0) neighborRight.Dispose();
     }
     
     /// <summary>
@@ -279,18 +325,37 @@ public class Chunk : MonoBehaviour
         mesh.normals = normalArray;
         mesh.SetTriangles(triangleArray, 0);
         
-        // Recalculate bounds for culling
+        // Recalculate bounds for culling and collision
         mesh.RecalculateBounds();
+        
+        // Update mesh collider ONLY if mesh has vertices (avoid warnings for empty chunks)
+        if (meshCollider != null)
+        {
+            if (vertices.Length > 0 && triangles.Length > 0)
+            {
+                // Valid mesh - update collider
+                meshCollider.sharedMesh = null; // Clear first to force rebuild
+                meshCollider.sharedMesh = mesh; // Assign new mesh (Unity cooks collision mesh automatically)
+            }
+            else
+            {
+                // Empty chunk (all air) - clear collider to avoid warnings and save memory
+                meshCollider.sharedMesh = null;
+            }
+        }
     }
     
     /// <summary>
-    /// Get block at position within chunk
+    /// Get block at position within chunk.
+    /// WARNING: May stall if terrain generation is still running - prefer checking IsTerrainDataReady first.
     /// </summary>
     public BlockType GetBlock(int x, int y, int z)
     {
-        if (!terrainDataReady)
+        // Only force completion if absolutely necessary (this stalls the main thread!)
+        if (!terrainDataReady && isTerrainJobRunning)
         {
-        ApplyTerrainDataFromJob();
+            Debug.LogWarning($"Chunk {ChunkPosition}: Force-completing terrain job for GetBlock() - this causes a stall!");
+            ApplyTerrainDataFromJob();
         }
         
         if (!VoxelData.IsBlockInChunk(x, y, z))
@@ -300,12 +365,15 @@ public class Chunk : MonoBehaviour
     }
     
     /// <summary>
-    /// Get direct access to blocks array (for neighbor queries)
+    /// Get direct access to blocks array (for neighbor queries).
+    /// WARNING: May stall if terrain generation is still running - prefer checking IsTerrainDataReady first.
     /// </summary>
     public NativeArray<BlockType> GetBlocksArray()
     {
-        if (!terrainDataReady)
+        // Only force completion if absolutely necessary (this stalls the main thread!)
+        if (!terrainDataReady && isTerrainJobRunning)
         {
+            Debug.LogWarning($"Chunk {ChunkPosition}: Force-completing terrain job for GetBlocksArray() - this causes a stall!");
             ApplyTerrainDataFromJob();
         }
         
@@ -317,12 +385,24 @@ public class Chunk : MonoBehaviour
         return blocks;
     }
 
+    /// <summary>
+    /// Get the terrain generation job handle for dependency chaining (e.g., mesh generation).
+    /// </summary>
     public JobHandle GetTerrainGenerationHandle()
     {
         return terrainJobHandle;
     }
 
+    /// <summary>
+    /// Check if terrain data is ready without forcing completion.
+    /// Use this to avoid stalling the main thread.
+    /// </summary>
     public bool IsTerrainDataReady => terrainDataReady;
+    
+    /// <summary>
+    /// Check if terrain generation job is currently running on worker threads.
+    /// </summary>
+    public bool IsTerrainJobRunning => isTerrainJobRunning;
 
     internal void ReceiveTerrainGenerationJob(JobHandle jobHandle)
     {
@@ -332,11 +412,16 @@ public class Chunk : MonoBehaviour
         needsMeshRegeneration = true;
     }
 
+    /// <summary>
+    /// Complete terrain generation job and mark data as ready.
+    /// This STALLS the main thread until the job finishes - only call when necessary!
+    /// Normally called automatically in Update() when job IsCompleted (no stall).
+    /// </summary>
     private void ApplyTerrainDataFromJob()
     {
         if (isTerrainJobRunning)
         {
-            terrainJobHandle.Complete();
+            terrainJobHandle.Complete(); // STALL WARNING: Blocks main thread until job finishes!
             isTerrainJobRunning = false;
             terrainDataReady = true;
             terrainJobHandle = default;
@@ -344,22 +429,25 @@ public class Chunk : MonoBehaviour
     }
     
     /// <summary>
-    /// Set block at position within chunk and regenerate mesh
+    /// Set block at position within chunk and regenerate mesh.
+    /// WARNING: May stall if terrain generation is still running.
     /// </summary>
     public void SetBlock(int x, int y, int z, BlockType blockType)
     {
         if (!VoxelData.IsBlockInChunk(x, y, z))
             return;
 
-        if (!terrainDataReady)
+        // Only force completion if absolutely necessary (this stalls the main thread!)
+        if (!terrainDataReady && isTerrainJobRunning)
         {
+            Debug.LogWarning($"Chunk {ChunkPosition}: Force-completing terrain job for SetBlock() - this causes a stall!");
             ApplyTerrainDataFromJob();
         }
         
         blocks[VoxelData.GetBlockIndex(x, y, z)] = blockType;
         
         // Regenerate mesh
-        StartMeshGeneration();
+        RequestMeshRegeneration();
     }
     
     /// <summary>

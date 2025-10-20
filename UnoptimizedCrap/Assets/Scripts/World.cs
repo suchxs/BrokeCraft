@@ -211,6 +211,7 @@ public class World : MonoBehaviour
             chunkObj.transform.parent = chunksParent;
             chunkObj.AddComponent<MeshFilter>();
             chunkObj.AddComponent<MeshRenderer>();
+            chunkObj.AddComponent<MeshCollider>(); // Add collider for physics
             chunkObj.AddComponent<Chunk>();
         }
         
@@ -333,6 +334,47 @@ public class World : MonoBehaviour
         chunk.SetBlock(localPos.x, localPos.y, localPos.z, blockType);
         
         // TODO: Update neighboring chunks if block is on boundary
+    }
+    
+    /// <summary>
+    /// Get a safe spawn position above terrain at given XZ coordinates.
+    /// Scans upward from sea level to find first air block above solid ground.
+    /// </summary>
+    public Vector3 GetSpawnPosition(int worldX = 0, int worldZ = 0)
+    {
+        // Start scanning from sea level
+        int scanY = VoxelData.SeaLevel;
+        int maxScanHeight = VoxelData.MaxWorldHeight - 10; // Don't scan too high
+        
+        bool foundGround = false;
+        int groundY = scanY;
+        
+        // Scan upward to find ground
+        for (int y = scanY; y < maxScanHeight; y++)
+        {
+            BlockType currentBlock = GetBlockAtPosition(new int3(worldX, y, worldZ));
+            BlockType blockAbove = GetBlockAtPosition(new int3(worldX, y + 1, worldZ));
+            
+            // Found solid ground with air above
+            if (currentBlock != BlockType.Air && blockAbove == BlockType.Air)
+            {
+                foundGround = true;
+                groundY = y;
+                break;
+            }
+        }
+        
+        if (!foundGround)
+        {
+            // No ground found, use sea level + offset
+            Debug.LogWarning($"No ground found at ({worldX}, {worldZ}), spawning at sea level + 10");
+            groundY = VoxelData.SeaLevel + 10;
+        }
+        
+        // Spawn player slightly above ground (add player height + small buffer)
+        float spawnY = groundY + VoxelData.PlayerHeight + 0.5f;
+        
+        return new Vector3(worldX, spawnY, worldZ);
     }
     
     /// <summary>
