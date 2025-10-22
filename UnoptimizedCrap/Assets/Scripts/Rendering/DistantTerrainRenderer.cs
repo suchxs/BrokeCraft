@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -75,7 +76,7 @@ public class DistantTerrainRenderer : MonoBehaviour
     private bool overrideMapsDirty;
 
     private NativeHashMap<int2, float> columnHeightOverrides;
-    private NativeHashMap<int2, float4> columnColorOverrides;
+    private NativeHashMap<int2, uint> columnColorOverrides;
     private World subscribedWorld;
 
     private readonly Dictionary<int2, Dictionary<int, ChunkColumnSummary[]>> chunkColumnSlices = new Dictionary<int2, Dictionary<int, ChunkColumnSummary[]>>(Int2Comparer.Instance);
@@ -808,7 +809,7 @@ public class DistantTerrainRenderer : MonoBehaviour
 
         int capacity = math.max(64, columnAggregates.Count * 2);
         columnHeightOverrides = new NativeHashMap<int2, float>(capacity, Allocator.Persistent);
-        columnColorOverrides = new NativeHashMap<int2, float4>(capacity, Allocator.Persistent);
+        columnColorOverrides = new NativeHashMap<int2, uint>(capacity, Allocator.Persistent);
 
         foreach (var pair in columnAggregates)
         {
@@ -820,7 +821,7 @@ public class DistantTerrainRenderer : MonoBehaviour
             }
 
             columnHeightOverrides.TryAdd(key, aggregate.surfaceHeight);
-            columnColorOverrides.TryAdd(key, aggregate.surfaceTint);
+            columnColorOverrides.TryAdd(key, ColumnColorPacking.Pack(aggregate.surfaceTint));
         }
 
         overrideMapsDirty = false;
@@ -916,6 +917,33 @@ internal struct DistantTerrainHeightJob : IJobFor
     }
 }
 
+internal static class ColumnColorPacking
+{
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static uint Pack(float4 color)
+    {
+        float4 saturated = math.saturate(color);
+        int r = math.clamp((int)math.round(saturated.x * 255f), 0, 255);
+        int g = math.clamp((int)math.round(saturated.y * 255f), 0, 255);
+        int b = math.clamp((int)math.round(saturated.z * 255f), 0, 255);
+        int a = math.clamp((int)math.round(saturated.w * 255f), 0, 255);
+
+        return (uint)(r | (g << 8) | (b << 16) | (a << 24));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static float4 Unpack(uint packed)
+    {
+        const float inv = 1f / 255f;
+        float r = (packed & 0xFFu) * inv;
+        float g = ((packed >> 8) & 0xFFu) * inv;
+        float b = ((packed >> 16) & 0xFFu) * inv;
+        float a = ((packed >> 24) & 0xFFu) * inv;
+
+        return new float4(r, g, b, a);
+    }
+}
+
 [BurstCompile(FloatMode = FloatMode.Fast, FloatPrecision = FloatPrecision.Low)]
 internal struct DistantTerrainNormalJob : IJobFor
 {
@@ -981,17 +1009,17 @@ internal struct DistantTerrainMeshJob : IJob
     [NativeDisableContainerSafetyRestriction] public NativeList<float2> UVsSouth;
     [NativeDisableContainerSafetyRestriction] public NativeList<float2> UVsEast;
     [NativeDisableContainerSafetyRestriction] public NativeList<float2> UVsWest;
-    [NativeDisableContainerSafetyRestriction] public NativeList<float4> ColorsNorth;
-    [NativeDisableContainerSafetyRestriction] public NativeList<float4> ColorsSouth;
-    [NativeDisableContainerSafetyRestriction] public NativeList<float4> ColorsEast;
-    [NativeDisableContainerSafetyRestriction] public NativeList<float4> ColorsWest;
+        [NativeDisableContainerSafetyRestriction] public NativeList<float4> ColorsNorth;
+        [NativeDisableContainerSafetyRestriction] public NativeList<float4> ColorsSouth;
+        [NativeDisableContainerSafetyRestriction] public NativeList<float4> ColorsEast;
+        [NativeDisableContainerSafetyRestriction] public NativeList<float4> ColorsWest;
 
     [NativeDisableContainerSafetyRestriction] public NativeList<int> TrianglesNorth;
     [NativeDisableContainerSafetyRestriction] public NativeList<int> TrianglesSouth;
     [NativeDisableContainerSafetyRestriction] public NativeList<int> TrianglesEast;
     [NativeDisableContainerSafetyRestriction] public NativeList<int> TrianglesWest;
 
-    [ReadOnly] public NativeHashMap<int2, float4> ColumnColors;
+        [ReadOnly] public NativeHashMap<int2, uint> ColumnColors;
     public float4 DefaultColor;
 
     public void Execute()
@@ -1099,9 +1127,9 @@ internal struct DistantTerrainMeshJob : IJob
         {
             int blockX = (int)math.floor(worldXZ.x);
             int blockZ = (int)math.floor(worldXZ.y);
-            if (ColumnColors.TryGetValue(new int2(blockX, blockZ), out float4 overrideTint))
+            if (ColumnColors.TryGetValue(new int2(blockX, blockZ), out uint packedTint))
             {
-                tint = overrideTint;
+                tint = ColumnColorPacking.Unpack(packedTint);
             }
         }
         colors.Add(tint);
