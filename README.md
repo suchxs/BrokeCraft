@@ -1,10 +1,10 @@
 # BrokeCraft
-> ⚠️ **No Release Yet** - Will Release A beta version once the prototype is working! <br>
+> ⚠️ **No Release Yet** - Upcoming Beta Release Planned once Prototype is stable and working!<br>
 
 A high-performance Minecraft-style voxel engine written in C# + Unity. The idea is to combine [Distant Horizons](https://www.curseforge.com/minecraft/mc-mods/distant-horizons) Level Details (Removing Minecraft render distance) and [Cubic Chunks](https://www.curseforge.com/minecraft/mc-mods/opencubicchunks) (Remove build limit of Minecraft) to achieve massive render distances and unlimited world height — without vanilla C# overhead.
 
 
-## How does this shit work?
+## How does this work?
 ### 1. Voxels & Rendering
 - Voxels are stored in a contiguous array. Each block generates only the visible faces (face culling), and Textures are drawn from a single [atlas](https://minecraft.wiki/w/Atlas) to reduce draw calls.
 - Each [chunk](https://minecraft.fandom.com/wiki/Chunk) is built into a single combined mesh instead of instantiating cubes individually. The mesh can be split per side to allow side-based culling (disabling unseen faces).
