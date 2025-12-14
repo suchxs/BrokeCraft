@@ -1,5 +1,5 @@
 # BrokeCraft
-> ⚠️ **No Release Yet** - Upcoming Beta Release Planned once Prototype is stable and working!<br>
+> ⚠️ **No Release Yet** - Only demo for presentation is built for now<br>
 
 A high-performance Minecraft-style voxel engine written in C# + Unity. The idea is to combine [Distant Horizons](https://www.curseforge.com/minecraft/mc-mods/distant-horizons) Level Details (Removing Minecraft render distance) and [Cubic Chunks](https://www.curseforge.com/minecraft/mc-mods/opencubicchunks) (Remove build limit of Minecraft) to achieve massive render distances and unlimited world height — without vanilla C# overhead.
 
