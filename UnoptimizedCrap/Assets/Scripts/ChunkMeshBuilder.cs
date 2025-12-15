@@ -13,6 +13,8 @@ public struct ChunkMeshBuilder : IJob
 {
     // Input: Block data for this chunk
     [ReadOnly] public NativeArray<BlockType> Blocks;
+    public int Step;
+    public float VoxelScale;
     
     // Input: Chunk world position
     public int3 ChunkPosition;
@@ -41,29 +43,26 @@ public struct ChunkMeshBuilder : IJob
     
     public void Execute()
     {
-        // Iterate through all blocks in the chunk
-        for (int x = 0; x < VoxelData.ChunkWidth; x++)
+        int step = math.max(1, Step);
+        bool doCulling = step == 1;
+        for (int x = 0; x < VoxelData.ChunkWidth; x += step)
         {
-            for (int y = 0; y < VoxelData.ChunkHeight; y++)
+            for (int y = 0; y < VoxelData.ChunkHeight; y += step)
             {
-                for (int z = 0; z < VoxelData.ChunkDepth; z++)
+                for (int z = 0; z < VoxelData.ChunkDepth; z += step)
                 {
                     int index = VoxelData.GetBlockIndex(x, y, z);
                     BlockType blockType = Blocks[index];
                     
-                    // Skip air blocks
                     if (blockType == BlockType.Air)
                         continue;
                     
-                    // Check each face of the block
                     for (int faceIndex = 0; faceIndex < VoxelData.FaceCount; faceIndex++)
                     {
-                        // Check if neighboring block is solid (for face culling)
-                        if (!IsFaceVisible(x, y, z, faceIndex))
+                        if (doCulling && !IsFaceVisible(x, y, z, faceIndex))
                             continue;
                         
-                        // Add face to mesh
-                        AddFace(x, y, z, faceIndex, blockType);
+                        AddFace(x, y, z, faceIndex, blockType, step);
                     }
                 }
             }
@@ -148,10 +147,11 @@ public struct ChunkMeshBuilder : IJob
     /// <summary>
     /// Add a single face to the mesh (4 vertices forming a quad, split into 2 triangles)
     /// </summary>
-    private void AddFace(int x, int y, int z, int faceIndex, BlockType blockType)
+    private void AddFace(int x, int y, int z, int faceIndex, BlockType blockType, int step)
     {
         int vertexIndex = Vertices.Length;
-        float3 blockPos = new float3(x, y, z);
+        float scale = VoxelScale <= 0f ? 1f : VoxelScale;
+        float3 blockPos = new float3(x, y, z) * scale;
         
         // Get the vertex indices for this face from lookup table
         int triOffset = faceIndex * VoxelData.VerticesPerFace;
@@ -164,7 +164,7 @@ public struct ChunkMeshBuilder : IJob
             
             // Convert byte3 vertex to float3
             byte3 vertByte = VoxelVerticesBytes[vertIndexByte];
-            float3 vert = new float3(vertByte.x, vertByte.y, vertByte.z);
+            float3 vert = new float3(vertByte.x, vertByte.y, vertByte.z) * step * scale;
             
             // Add to block position
             float3 vertPos = blockPos + vert;

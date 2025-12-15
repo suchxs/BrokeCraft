@@ -19,7 +19,7 @@ public class ChunkPool
         parent = parentTransform;
     }
 
-    public Chunk Get(int3 position, World world)
+    public Chunk Get(int3 position, World world, int lodStep)
     {
         Chunk chunk;
         if (pool.Count > 0)
@@ -36,7 +36,7 @@ public class ChunkPool
             chunk = go.GetComponent<Chunk>();
         }
 
-        chunk.Initialize(position, chunkMaterial, world);
+        chunk.Initialize(position, chunkMaterial, world, lodStep);
         return chunk;
     }
 

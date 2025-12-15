@@ -38,9 +38,17 @@ public class GameManager : MonoBehaviour
         // Allow World.Start() to execute before we poll its data.
         yield return null;
 
-        // Wait for world prewarm if active
+        // Wait for world prewarm to finish
         while (!world.IsPrewarmComplete)
         {
+            yield return null;
+        }
+
+        // Extra settle buffer to ensure streaming is idle
+        float settleTime = 5f;
+        while (settleTime > 0f)
+        {
+            settleTime -= Time.deltaTime;
             yield return null;
         }
 
@@ -52,16 +60,9 @@ public class GameManager : MonoBehaviour
         );
         world.LoadChunksAroundPosition(spawnChunk);
 
-        float timer = readinessTimeoutSeconds;
-        while (!IsSpawnAreaReady())
+        // Wait for spawn area readiness with no early exit
+        while (!IsSpawnAreaReady() || (world != null && !world.IsPrewarmComplete))
         {
-            if (timer <= 0f)
-            {
-                Debug.LogWarning("Spawn area did not become ready before timeout. Spawning player anyway.");
-                break;
-            }
-
-            timer -= Time.deltaTime;
             yield return null;
         }
 

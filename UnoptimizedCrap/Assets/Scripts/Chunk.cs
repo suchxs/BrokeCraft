@@ -35,6 +35,7 @@ public class Chunk : MonoBehaviour
     
     // Chunk position in world space (chunk coordinates, not block coordinates)
     public int3 ChunkPosition { get; private set; }
+    public int LodStep { get; private set; } = 1;
     
     // Reference to world for querying neighboring chunks
     private World world;
@@ -79,13 +80,14 @@ public class Chunk : MonoBehaviour
     /// <summary>
     /// Initialize this chunk with block data and position
     /// </summary>
-    public void Initialize(int3 chunkPosition, Material material, World worldRef)
+    public void Initialize(int3 chunkPosition, Material material, World worldRef, int lodStep = 1)
     {
         // Ensure any previous jobs on this pooled chunk are done before reuse
         CompleteAllJobs();
 
         ChunkPosition = chunkPosition;
         world = worldRef;
+        LodStep = math.max(1, lodStep);
         columnSummariesEnabled = world != null && world.IsDistantTerrainEnabled;
         
         transform.position = new Vector3(
@@ -174,6 +176,17 @@ public class Chunk : MonoBehaviour
     {
         needsMeshRegeneration = true;
         meshDataReady = false;
+    }
+
+    public void SetLodStep(int step)
+    {
+        int clamped = math.max(1, step);
+        if (clamped == LodStep)
+        {
+            return;
+        }
+        LodStep = clamped;
+        RequestMeshRegeneration();
     }
 
     private void MarkColumnSummaryDirty()
@@ -299,6 +312,8 @@ public class Chunk : MonoBehaviour
         var job = new ChunkMeshBuilder
         {
             Blocks = blocks,
+            Step = LodStep,
+            VoxelScale = LodStep,
             ChunkPosition = ChunkPosition,
             Vertices = vertices,
             Triangles = triangles,
@@ -444,7 +459,7 @@ public class Chunk : MonoBehaviour
         bool hasGeo = vertices.Length > 0 && triangles.Length > 0;
         if (meshRenderer != null)
         {
-            meshRenderer.enabled = hasGeo;
+        meshRenderer.enabled = hasGeo;
         }
 
         if (meshCollider != null)

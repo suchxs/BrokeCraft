@@ -66,6 +66,7 @@ public class World : MonoBehaviour
     private float prewarmProgress;
     private bool prewarmComplete;
     private const int UnloadBuffer = 2;
+    private int3 currentCenterChunk;
 
     public event Action<int3, NativeArray<ChunkColumnSummary>> ChunkColumnSummaryReady;
     public event Action<int3> ChunkColumnSummaryInvalidated;
@@ -79,6 +80,7 @@ public class World : MonoBehaviour
         chunksParent = parent.transform;
 
         chunkPool = new ChunkPool(chunkPrefab, chunkMaterial, chunksParent);
+        currentCenterChunk = worldOriginChunk;
 
         // Validate material
         if (chunkMaterial == null)
@@ -107,6 +109,7 @@ public class World : MonoBehaviour
 
     public bool IsPrewarming => isPrewarming && !prewarmComplete;
     public bool IsPrewarmComplete => prewarmComplete;
+    public float PrewarmProgress => prewarmProgress;
 
     private void EnforceMinimumViewSettings()
     {
@@ -128,6 +131,20 @@ public class World : MonoBehaviour
     private int GetVerticalRadius()
     {
         return math.max(1, verticalViewDistance / 2);
+    }
+
+    private int DetermineLodStep(int3 centerChunkPos, int3 targetChunkPos)
+    {
+        int3 delta = targetChunkPos - centerChunkPos;
+        int dist = math.max(math.abs(delta.x), math.max(math.abs(delta.y), math.abs(delta.z)));
+
+        int nearRadius = GetHorizontalRadius();
+        if (dist <= nearRadius)
+        {
+            return 1;
+        }
+
+        return 2;
     }
 
     private System.Collections.IEnumerator PrewarmAndGenerateWorld()
@@ -233,6 +250,7 @@ public class World : MonoBehaviour
     /// </summary>
     public void LoadChunksAroundPosition(int3 centerChunkPos)
     {
+        currentCenterChunk = centerChunkPos;
         int horizontalHalf = GetHorizontalRadius();
         int verticalHalf = GetVerticalRadius();
         
@@ -248,14 +266,7 @@ public class World : MonoBehaviour
                     // Create chunk if it doesn't exist
                     if (!chunks.ContainsKey(chunkPos))
                     {
-                        if (chunkPos.Equals(centerChunkPos))
-                        {
-                            CreateChunk(chunkPos);
-                        }
-                        else
-                        {
-                            EnqueueChunkCreation(chunkPos);
-                        }
+                        EnqueueChunkCreation(chunkPos);
                     }
                 }
             }
@@ -346,8 +357,9 @@ public class World : MonoBehaviour
         // Don't create if already exists
         if (chunks.ContainsKey(chunkPosition))
             return chunks[chunkPosition];
-        
-        Chunk chunk = chunkPool.Get(chunkPosition, this);
+
+        int lodStep = DetermineLodStep(chunkPosition, chunkPosition);
+        Chunk chunk = chunkPool.Get(chunkPosition, this, lodStep);
         
         // Store in dictionary
         chunks[chunkPosition] = chunk;
@@ -449,7 +461,10 @@ public class World : MonoBehaviour
                 continue;
             }
 
-            CreateChunk(chunkPosition);
+            int lodStep = DetermineLodStep(currentCenterChunk, chunkPosition);
+            Chunk chunk = chunkPool.Get(chunkPosition, this, lodStep);
+            chunks[chunkPosition] = chunk;
+            NotifyNeighborsToRegenerate(chunkPosition);
             processed++;
         }
     }
