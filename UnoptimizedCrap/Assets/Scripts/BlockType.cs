@@ -10,6 +10,6 @@ public enum BlockType : byte
     Dirt = 2,
     Grass = 3,
     Bedrock = 4,
+    Sand = 5,
     // Add more block types as needed (Wood, Sand, Cobblestone, etc.)
 }
-

@@ -8,6 +8,7 @@ using Unity.Mathematics;
 /// </summary>
 public static class BlockTextureData
 {
+    private const int TEX_SAND = 819;
     // Texture indices from CompleteBlockAtlas_Custom.png
     // Built from ALL 1083 Minecraft block textures (33x33 grid)
     // See CompleteBlockAtlas_Reference.png for visual ID reference
@@ -45,6 +46,9 @@ public static class BlockTextureData
             
             case BlockType.Bedrock:
                 return TEX_BEDROCK; // All faces use same texture
+
+            case BlockType.Sand:
+                return TEX_SAND;
             
             default:
                 return TEX_STONE; // Fallback

@@ -10,6 +10,14 @@ using UnityEngine;
 /// </summary>
 public class World : MonoBehaviour
 {
+    private const int DefaultHorizontalViewDistance = 32; // diameter in chunks (balanced)
+    private const int DefaultVerticalViewDistance = 16;  // diameter in chunks (balanced)
+    private const int DefaultMaxCreationsPerFrame = 48;
+    private const int WarmupMultiplier = 2;
+    private const int WarmupMaxHorizontalHalf = 12;
+    private const int WarmupMaxVerticalHalf = 8;
+    private const int WarmupCreationBoost = 8;
+
     [Header("World Settings")]
     [Tooltip("Material to use for all chunks (assign your texture atlas material here)")]
     public Material chunkMaterial;
@@ -19,22 +27,24 @@ public class World : MonoBehaviour
     
     [Header("Cubic Chunks Configuration")]
     [Tooltip("Horizontal view distance in chunks (X/Z axes)")]
-    public int horizontalViewDistance = 12;
+    public int horizontalViewDistance = DefaultHorizontalViewDistance;
     
     [Tooltip("Vertical view distance in chunks (Y axis) - up and down")]
-    public int verticalViewDistance = 4;
+    public int verticalViewDistance = DefaultVerticalViewDistance;
     
     [Tooltip("Generate chunks on start")]
     public bool generateOnStart = true;
     
     [Tooltip("Maximum number of new chunks to instantiate per frame when streaming.")]
-    [Range(1, 32)]
-    public int maxChunkCreationsPerFrame = 12;
+    [Range(1, 256)]
+    public int maxChunkCreationsPerFrame = DefaultMaxCreationsPerFrame;
 
     [Header("Distant Terrain")]
     [SerializeField] private bool enableDistantTerrain = false;
     [Tooltip("Optional renderer that draws kilometre-scale horizon geometry. Will be created automatically if omitted.")]
     [SerializeField] private DistantTerrainRenderer distantTerrainRenderer;
+    [Header("Loading UI")]
+    [SerializeField] private LoadingOverlay loadingOverlay;
     
     [Header("Terrain Generation")]
     [Tooltip("Procedural terrain parameters (Perlin FBM with Burst jobs)")]
@@ -51,6 +61,11 @@ public class World : MonoBehaviour
     
     // Parent transform for organization
     private Transform chunksParent;
+    private ChunkPool chunkPool;
+    private bool isPrewarming;
+    private float prewarmProgress;
+    private bool prewarmComplete;
+    private const int UnloadBuffer = 2;
 
     public event Action<int3, NativeArray<ChunkColumnSummary>> ChunkColumnSummaryReady;
     public event Action<int3> ChunkColumnSummaryInvalidated;
@@ -62,17 +77,21 @@ public class World : MonoBehaviour
         GameObject parent = new GameObject("Chunks");
         parent.transform.parent = transform;
         chunksParent = parent.transform;
-        
+
+        chunkPool = new ChunkPool(chunkPrefab, chunkMaterial, chunksParent);
+
         // Validate material
         if (chunkMaterial == null)
         {
             Debug.LogError("No chunk material assigned! Please assign a material with your texture atlas.");
         }
-        
-        // Generate initial world
+
+        EnforceMinimumViewSettings();
+
+        // Generate initial world (with optional overlay)
         if (generateOnStart)
         {
-            GenerateWorld();
+            StartCoroutine(PrewarmAndGenerateWorld());
         }
 
         if (enableDistantTerrain)
@@ -83,7 +102,99 @@ public class World : MonoBehaviour
     
     private void Update()
     {
-        ProcessChunkCreationQueue();
+        ProcessChunkCreationQueue(false);
+    }
+
+    public bool IsPrewarming => isPrewarming && !prewarmComplete;
+    public bool IsPrewarmComplete => prewarmComplete;
+
+    private void EnforceMinimumViewSettings()
+    {
+        horizontalViewDistance = math.max(horizontalViewDistance, DefaultHorizontalViewDistance);
+        verticalViewDistance = math.max(verticalViewDistance, DefaultVerticalViewDistance);
+        maxChunkCreationsPerFrame = math.max(maxChunkCreationsPerFrame, DefaultMaxCreationsPerFrame);
+
+        // Cap to prevent runaway memory/perf if tweaked in inspector
+        horizontalViewDistance = math.clamp(horizontalViewDistance, 2, 48);
+        verticalViewDistance = math.clamp(verticalViewDistance, 2, 24);
+        maxChunkCreationsPerFrame = math.clamp(maxChunkCreationsPerFrame, 1, 64);
+    }
+
+    private int GetHorizontalRadius()
+    {
+        return math.max(1, horizontalViewDistance / 2);
+    }
+
+    private int GetVerticalRadius()
+    {
+        return math.max(1, verticalViewDistance / 2);
+    }
+
+    private System.Collections.IEnumerator PrewarmAndGenerateWorld()
+    {
+        if (loadingOverlay != null)
+        {
+            loadingOverlay.Show();
+            loadingOverlay.SetProgress(0f);
+        }
+
+        int warmupHorizontal = math.min(GetHorizontalRadius() * WarmupMultiplier, WarmupMaxHorizontalHalf);
+        int warmupVertical = math.min(GetVerticalRadius() * WarmupMultiplier, WarmupMaxVerticalHalf);
+        int total = (warmupHorizontal * 2 + 1) * (warmupHorizontal * 2 + 1) * (warmupVertical * 2 + 1);
+        prewarmProgress = 0f;
+        isPrewarming = true;
+        prewarmComplete = false;
+
+        // Synchronously create origin chunk first
+        CreateChunk(worldOriginChunk);
+        prewarmProgress = 1f / math.max(1, total);
+        if (loadingOverlay != null)
+        {
+            loadingOverlay.SetProgress(prewarmProgress);
+        }
+        yield return null;
+
+        for (int x = -warmupHorizontal; x <= warmupHorizontal; x++)
+        {
+            for (int z = -warmupHorizontal; z <= warmupHorizontal; z++)
+            {
+                for (int y = -warmupVertical; y <= warmupVertical; y++)
+                {
+                    int3 chunkPos = worldOriginChunk + new int3(x, y, z);
+                    if (chunkPos.Equals(worldOriginChunk))
+                    {
+                        continue;
+                    }
+
+                    EnqueueChunkCreation(chunkPos);
+                }
+            }
+        }
+
+        // Let the queue drain while updating progress
+        while (chunkCreationQueue.Count > 0 || pendingChunkCreations.Count > 0)
+        {
+            // Aggressively process to finish warmup before gameplay
+            ProcessChunkCreationQueue(true);
+
+            int loaded = chunks.Count;
+            float progress = math.saturate(loaded / math.max(1f, total));
+            prewarmProgress = progress;
+            if (loadingOverlay != null)
+            {
+                loadingOverlay.SetProgress(prewarmProgress);
+            }
+            yield return null;
+        }
+
+        if (loadingOverlay != null)
+        {
+            loadingOverlay.SetProgress(1f);
+            loadingOverlay.Hide();
+        }
+
+        isPrewarming = false;
+        prewarmComplete = true;
     }
     
     /// <summary>
@@ -92,8 +203,8 @@ public class World : MonoBehaviour
     /// </summary>
     public void GenerateWorld()
     {
-        int horizontalHalf = horizontalViewDistance / 2;
-        int verticalHalf = verticalViewDistance / 2;
+        int horizontalHalf = GetHorizontalRadius();
+        int verticalHalf = GetVerticalRadius();
         
         int chunksGenerated = 0;
         
@@ -122,8 +233,8 @@ public class World : MonoBehaviour
     /// </summary>
     public void LoadChunksAroundPosition(int3 centerChunkPos)
     {
-        int horizontalHalf = horizontalViewDistance / 2;
-        int verticalHalf = verticalViewDistance / 2;
+        int horizontalHalf = GetHorizontalRadius();
+        int verticalHalf = GetVerticalRadius();
         
         // Determine which chunks should exist
         for (int x = -horizontalHalf; x < horizontalHalf; x++)
@@ -159,8 +270,13 @@ public class World : MonoBehaviour
     /// </summary>
     private void UnloadDistantChunks(int3 centerChunkPos)
     {
-        int horizontalHalf = horizontalViewDistance / 2;
-        int verticalHalf = verticalViewDistance / 2;
+        if (isPrewarming)
+        {
+            return; // avoid gaps during prewarm
+        }
+
+        int horizontalHalf = GetHorizontalRadius();
+        int verticalHalf = GetVerticalRadius();
         
         // Find chunks to remove (can't modify dictionary during iteration)
         var chunksToRemove = new System.Collections.Generic.List<int3>();
@@ -172,9 +288,9 @@ public class World : MonoBehaviour
             
             // Changed >= to > to prevent edge chunks from constantly unloading/reloading
             // Add +1 buffer to avoid flickering at boundaries
-            if (distance.x > horizontalHalf + 1 || 
-                distance.z > horizontalHalf + 1 || 
-                distance.y > verticalHalf + 1)
+            if (distance.x > horizontalHalf + UnloadBuffer || 
+                distance.z > horizontalHalf + UnloadBuffer || 
+                distance.y > verticalHalf + UnloadBuffer)
             {
                 chunksToRemove.Add(chunkPos);
             }
@@ -231,24 +347,7 @@ public class World : MonoBehaviour
         if (chunks.ContainsKey(chunkPosition))
             return chunks[chunkPosition];
         
-        // Create chunk GameObject
-        GameObject chunkObj;
-        if (chunkPrefab != null)
-        {
-            chunkObj = Instantiate(chunkPrefab, chunksParent);
-        }
-        else
-        {
-            chunkObj = new GameObject($"Chunk_{chunkPosition.x}_{chunkPosition.y}_{chunkPosition.z}");
-            chunkObj.transform.parent = chunksParent;
-            chunkObj.AddComponent<MeshFilter>();
-            chunkObj.AddComponent<MeshRenderer>();
-            chunkObj.AddComponent<Chunk>();
-        }
-        
-        // Initialize chunk with world reference for neighbor queries
-        Chunk chunk = chunkObj.GetComponent<Chunk>();
-        chunk.Initialize(chunkPosition, chunkMaterial, this);
+        Chunk chunk = chunkPool.Get(chunkPosition, this);
         
         // Store in dictionary
         chunks[chunkPosition] = chunk;
@@ -318,7 +417,7 @@ public class World : MonoBehaviour
         chunkCreationQueue.Enqueue(chunkPosition);
     }
     
-    private void ProcessChunkCreationQueue()
+    private void ProcessChunkCreationQueue(bool consumeAll)
     {
         if (chunkCreationQueue.Count == 0)
         {
@@ -326,7 +425,19 @@ public class World : MonoBehaviour
         }
 
         int processed = 0;
-        int maxPerFrame = math.max(1, maxChunkCreationsPerFrame);
+        int maxPerFrame;
+        if (consumeAll)
+        {
+            maxPerFrame = int.MaxValue;
+        }
+        else if (isPrewarming)
+        {
+            maxPerFrame = math.max(1, maxChunkCreationsPerFrame * WarmupCreationBoost);
+        }
+        else
+        {
+            maxPerFrame = math.max(1, maxChunkCreationsPerFrame);
+        }
 
         while (processed < maxPerFrame && chunkCreationQueue.Count > 0)
         {
@@ -415,7 +526,7 @@ public class World : MonoBehaviour
         // Notify neighbors to regenerate meshes (edges may need to render faces now)
         NotifyNeighborsToRegenerate(chunkPosition);
         
-        Destroy(chunk.gameObject);
+        chunkPool.Return(chunk);
     }
     
     /// <summary>
@@ -541,6 +652,7 @@ public class World : MonoBehaviour
         
         // Cleanup static voxel data
         Chunk.DisposeStaticData();
+        chunkPool = null;
     }
     
     private void OnDestroy()
@@ -550,6 +662,7 @@ public class World : MonoBehaviour
         
         // Cleanup static voxel data
         Chunk.DisposeStaticData();
+        chunkPool = null;
     }
     
     /// <summary>

@@ -25,6 +25,7 @@ public struct TerrainNoiseSettings
     public float maxHeight;
     public float2 offset;
     public uint seed;
+    public bool useFastNoiseSimd;
 
     public static TerrainNoiseSettings Default => new TerrainNoiseSettings
     {
@@ -44,7 +45,8 @@ public struct TerrainNoiseSettings
         minHeight = 0f,
         maxHeight = 512f,
         offset = float2.zero,
-        seed = 1442695041u // large odd constant for hashing
+        seed = 1442695041u, // large odd constant for hashing
+        useFastNoiseSimd = true
     };
 }
 
@@ -91,9 +93,7 @@ public static class TerrainNoise
             float2 octaveOffset = GetOctaveOffset(settings.seed, octave);
             float2 sampleCoords = warpedCoords * frequency + octaveOffset;
 
-            // Convert simplex noise [-1,1] to [0,1]
-            float noiseValue = noise.snoise(sampleCoords);
-            noiseValue = noiseValue * 0.5f + 0.5f;
+            float noiseValue = SampleOctave(sampleCoords, settings);
 
             // Ridge-like shaping inspired by Seb Lague
             float ridge = 1f - math.abs(noiseValue * 2f - 1f);
@@ -150,6 +150,20 @@ public static class TerrainNoise
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float SampleOctave(float2 sampleCoords, in TerrainNoiseSettings settings)
+    {
+        if (settings.useFastNoiseSimd)
+        {
+            // Fast hash-based value noise (SIMD-friendly, no managed calls)
+            return FastNoiseSimd.Sample(sampleCoords);
+        }
+
+        // Convert simplex noise [-1,1] to [0,1]
+        float noiseValue = noise.snoise(sampleCoords);
+        return noiseValue * 0.5f + 0.5f;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static float2 HashFloat2(uint value)
     {
         uint hashed = value * 747796405u + 2891336453u;
@@ -158,5 +172,47 @@ public static class TerrainNoise
         return new float2(
             (hashed & 0x00FFFFFFu) / 16777215f - 0.5f,
             (hashY & 0x00FFFFFFu) / 16777215f - 0.5f);
+    }
+}
+
+/// <summary>
+/// Lightweight, Burst-friendly hash noise intended as a FastNoiseSIMD-style replacement when native bindings are unavailable.
+/// Uses 2D value noise with bilinear interpolation for speed.
+/// </summary>
+[BurstCompile]
+public static class FastNoiseSimd
+{
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static float Sample(float2 p)
+    {
+        int ix = (int)math.floor(p.x);
+        int iz = (int)math.floor(p.y);
+
+        float fx = p.x - ix;
+        float fz = p.y - iz;
+
+        float v00 = Hash01(ix, iz);
+        float v10 = Hash01(ix + 1, iz);
+        float v01 = Hash01(ix, iz + 1);
+        float v11 = Hash01(ix + 1, iz + 1);
+
+        float vx0 = math.lerp(v00, v10, Smooth(fx));
+        float vx1 = math.lerp(v01, v11, Smooth(fx));
+        return math.lerp(vx0, vx1, Smooth(fz));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float Hash01(int x, int z)
+    {
+        uint h = (uint)(x * 374761393 + z * 668265263);
+        h = (h ^ (h >> 13)) * 1274126177u;
+        h ^= h >> 16;
+        return (h & 0x00FFFFFFu) / 16777215f;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float Smooth(float t)
+    {
+        return t * t * (3f - 2f * t);
     }
 }

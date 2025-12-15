@@ -21,6 +21,7 @@ public class ChunkLoadTester : MonoBehaviour
     [Header("Chunk Loading")]
     [SerializeField] private bool enableDynamicLoading = true;
     [SerializeField] private float updateInterval = 0.5f;
+    [SerializeField] private bool logChunkMoves = false;
     
     private int3 lastChunkPos;
     private float lastUpdateTime;
@@ -128,7 +129,10 @@ public class ChunkLoadTester : MonoBehaviour
         // If we moved to a new chunk, trigger loading
         if (!currentChunkPos.Equals(lastChunkPos))
         {
-            Debug.Log($"[ChunkLoadTester] Moved to chunk {currentChunkPos} (world Y: {currentChunkPos.y * VoxelData.ChunkHeight})");
+            if (logChunkMoves)
+            {
+                Debug.Log($"[ChunkLoadTester] Moved to chunk {currentChunkPos} (world Y: {currentChunkPos.y * VoxelData.ChunkHeight})");
+            }
             world.LoadChunksAroundPosition(currentChunkPos);
             lastChunkPos = currentChunkPos;
         }

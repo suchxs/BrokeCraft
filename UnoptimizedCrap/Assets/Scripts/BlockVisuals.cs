@@ -13,7 +13,8 @@ public static class BlockVisuals
         new float4(0.45f, 0.45f, 0.48f, 1f), // Stone
         new float4(0.42f, 0.32f, 0.24f, 1f), // Dirt
         new float4(0.38f, 0.58f, 0.29f, 1f), // Grass
-        new float4(0.15f, 0.13f, 0.18f, 1f)  // Bedrock
+        new float4(0.15f, 0.13f, 0.18f, 1f), // Bedrock
+        new float4(0.86f, 0.82f, 0.65f, 1f)  // Sand
     };
 
     /// <summary>

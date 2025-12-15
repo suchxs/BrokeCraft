@@ -3,6 +3,9 @@
 
 A high-performance Minecraft-style voxel engine written in C# + Unity. This version also implements [Cubic Chunks](https://www.curseforge.com/minecraft/mc-mods/opencubicchunks) (Remove build limit of Minecraft) to achieve unlimited world build height — without vanilla C# overhead.
 
+> Current status: the experimental distant-horizon renderer is disabled while it's debugged; chunk render distance is cranked up instead, keeping Burst-compatible streaming.
+> Biomes: Mountains, Plains, and Desert are blended via low-frequency noise. Deserts use sand blocks; mountains push taller, steeper terrain. Biome shaping and sand depth live in `TerrainGenerationSettings` → `BiomeSettings`.
+
 
 ## How does this work?
 ### 1. Voxels & Rendering

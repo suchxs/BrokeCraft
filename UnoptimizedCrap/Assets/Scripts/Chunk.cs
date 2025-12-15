@@ -81,6 +81,9 @@ public class Chunk : MonoBehaviour
     /// </summary>
     public void Initialize(int3 chunkPosition, Material material, World worldRef)
     {
+        // Ensure any previous jobs on this pooled chunk are done before reuse
+        CompleteAllJobs();
+
         ChunkPosition = chunkPosition;
         world = worldRef;
         columnSummariesEnabled = world != null && world.IsDistantTerrainEnabled;
@@ -95,7 +98,22 @@ public class Chunk : MonoBehaviour
         
         // Ensure chunk is on Default layer for proper collision
         gameObject.layer = 0; // Default layer
-        
+
+        mesh.Clear();
+        meshCollider.sharedMesh = null;
+        meshRenderer.enabled = false;
+        meshDataReady = false;
+        needsMeshRegeneration = true;
+        terrainDataReady = false;
+        isTerrainJobRunning = false;
+        isMeshJobRunning = false;
+        terrainJobHandle = default;
+        meshJobHandle = default;
+        columnSummaryJobHandle = default;
+        isColumnSummaryJobRunning = false;
+        columnSummaryReady = false;
+        columnSummaryDirty = false;
+
         // Allocate block data
         if (!isBlocksAllocated)
         {
@@ -134,6 +152,7 @@ public class Chunk : MonoBehaviour
             Blocks = blocks,
             ChunkPosition = ChunkPosition,
             NoiseSettings = settings.ToNoiseSettings(),
+            BiomeSettings = settings.ToBiomeNoiseSettings(),
             SoilDepth = math.clamp(settings.soilDepth, VoxelData.MinSoilDepth, VoxelData.MaxSoilDepth),
             BedrockDepth = math.clamp(settings.bedrockDepth, VoxelData.MinBedrockDepth, VoxelData.MaxBedrockDepth),
             AlpineNormalizedThreshold = math.clamp(settings.alpineNormalizedThreshold, 0f, 1f),
@@ -422,20 +441,18 @@ public class Chunk : MonoBehaviour
         // Recalculate bounds for culling
         mesh.RecalculateBounds();
 
-        if (meshCollider != null)
+        bool hasGeo = vertices.Length > 0 && triangles.Length > 0;
+        if (meshRenderer != null)
         {
-            if (vertices.Length == 0 || triangles.Length == 0)
-            {
-                meshCollider.sharedMesh = null;
-            }
-            else
-            {
-                meshCollider.sharedMesh = null;
-                meshCollider.sharedMesh = mesh;
-            }
+            meshRenderer.enabled = hasGeo;
         }
 
-        meshDataReady = true;
+        if (meshCollider != null)
+        {
+            meshCollider.sharedMesh = hasGeo ? mesh : null;
+        }
+
+        meshDataReady = hasGeo;
     }
 
     private static void DisposeNeighborArray(NativeArray<BlockType> neighborArray)

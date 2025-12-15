@@ -18,6 +18,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private float readinessTimeoutSeconds = 12f;
 
     private PlayerController playerInstance;
+    private float sampledSpawnHeight;
     private static readonly int3 ChunkDimensions = new int3(VoxelData.ChunkWidth, VoxelData.ChunkHeight, VoxelData.ChunkDepth);
 
     private IEnumerator Start()
@@ -37,6 +38,20 @@ public class GameManager : MonoBehaviour
         // Allow World.Start() to execute before we poll its data.
         yield return null;
 
+        // Wait for world prewarm if active
+        while (!world.IsPrewarmComplete)
+        {
+            yield return null;
+        }
+
+        sampledSpawnHeight = SampleHeight(spawnWorldX, spawnWorldZ);
+        int3 spawnChunk = new int3(
+            (int)math.floor(spawnWorldX / (float)ChunkDimensions.x),
+            (int)math.floor(sampledSpawnHeight / (float)ChunkDimensions.y),
+            (int)math.floor(spawnWorldZ / (float)ChunkDimensions.z)
+        );
+        world.LoadChunksAroundPosition(spawnChunk);
+
         float timer = readinessTimeoutSeconds;
         while (!IsSpawnAreaReady())
         {
@@ -55,7 +70,7 @@ public class GameManager : MonoBehaviour
 
     private bool IsSpawnAreaReady()
     {
-        int3 baseBlock = new int3(spawnWorldX, VoxelData.SeaLevel, spawnWorldZ);
+        int3 baseBlock = new int3(spawnWorldX, (int)sampledSpawnHeight, spawnWorldZ);
         int3 baseChunk = new int3(
             (int)math.floor(baseBlock.x / (float)ChunkDimensions.x),
             (int)math.floor(baseBlock.y / (float)ChunkDimensions.y),
@@ -84,7 +99,8 @@ public class GameManager : MonoBehaviour
 
     private void SpawnPlayer()
     {
-        Vector3 spawnPosition = world.GetSpawnPosition(spawnWorldX, spawnWorldZ);
+        float spawnY = sampledSpawnHeight + VoxelData.PlayerHeight + 0.5f;
+        Vector3 spawnPosition = new Vector3(spawnWorldX, spawnY, spawnWorldZ);
         if (centerOnBlock)
         {
             spawnPosition.x += 0.5f;
@@ -102,5 +118,79 @@ public class GameManager : MonoBehaviour
         {
             Debug.LogWarning("Player prefab is missing the PlayerController component.");
         }
+    }
+
+    private float SampleHeight(int worldX, int worldZ)
+    {
+        TerrainGenerationSettings settings = world.GetTerrainGenerationSettings();
+        TerrainNoiseSettings noise = settings.ToNoiseSettings();
+        BiomeNoiseSettings biome = settings.ToBiomeNoiseSettings();
+
+        BiomeWeights weights = SampleBiomeWeights(worldX, worldZ, biome);
+        TerrainNoiseSettings adjusted = AdjustNoiseForBiome(noise, biome, weights);
+        TerrainHeightSample sample = TerrainNoise.SampleHeight(new float2(worldX, worldZ), adjusted);
+        return sample.Height;
+    }
+
+    private static BiomeWeights SampleBiomeWeights(int worldX, int worldZ, BiomeNoiseSettings biomeSettings)
+    {
+        float2 coords = new float2(worldX, worldZ);
+        float2 scaled = (coords + biomeSettings.biomeOffset) / math.max(1f, biomeSettings.biomeScale);
+        float biomeNoise = noise.snoise(scaled) * 0.5f + 0.5f;
+
+        float desertW = BiomeWeight(biomeNoise, 0.15f, 0.35f);
+        float plainsW = BiomeWeight(biomeNoise, 0.5f, 0.3f);
+        float mountainW = BiomeWeight(biomeNoise, 0.85f, 0.35f);
+
+        float weightSum = math.max(0.0001f, desertW + plainsW + mountainW);
+        float3 normalized = new float3(desertW, plainsW, mountainW) / weightSum;
+
+        BiomeId dominant = BiomeId.Plains;
+        float maxW = normalized.y;
+        if (normalized.x > maxW)
+        {
+            maxW = normalized.x;
+            dominant = BiomeId.Desert;
+        }
+        if (normalized.z > maxW)
+        {
+            dominant = BiomeId.Mountains;
+        }
+
+        return new BiomeWeights
+        {
+            Desert = normalized.x,
+            Plains = normalized.y,
+            Mountains = normalized.z,
+            Dominant = dominant
+        };
+    }
+
+    private static float BiomeWeight(float value, float center, float radius)
+    {
+        float dist = math.abs(value - center);
+        return math.saturate(1f - dist / math.max(radius, 0.0001f));
+    }
+
+    private static TerrainNoiseSettings AdjustNoiseForBiome(TerrainNoiseSettings baseSettings, BiomeNoiseSettings biome, BiomeWeights weights)
+    {
+        float3 heightMultipliers = new float3(biome.desertHeightMultiplier, biome.plainsHeightMultiplier, biome.mountainHeightMultiplier);
+        float3 baseOffsets = new float3(biome.desertBaseOffset, biome.plainsBaseOffset, biome.mountainBaseOffset);
+        float3 ridge = new float3(biome.desertRidgeStrength, biome.plainsRidgeStrength, biome.mountainRidgeStrength);
+        float3 redistribution = new float3(biome.desertRedistribution, biome.plainsRedistribution, biome.mountainRedistribution);
+        float3 expBlend = new float3(biome.desertExponentialBlend, biome.plainsExponentialBlend, biome.mountainExponentialBlend);
+        float3 expScale = new float3(biome.desertExponentialScale, biome.plainsExponentialScale, biome.mountainExponentialScale);
+
+        float3 weightsVec = new float3(weights.Desert, weights.Plains, weights.Mountains);
+
+        TerrainNoiseSettings adjusted = baseSettings;
+        adjusted.heightMultiplier = baseSettings.heightMultiplier * math.csum(weightsVec * heightMultipliers);
+        adjusted.baseHeight = baseSettings.baseHeight + math.csum(weightsVec * baseOffsets);
+        adjusted.ridgeStrength = math.clamp(math.csum(weightsVec * ridge), 0f, 1f);
+        adjusted.redistributionPower = math.max(0.001f, math.csum(weightsVec * redistribution));
+        adjusted.exponentialBlend = math.clamp(math.csum(weightsVec * expBlend), 0f, 1f);
+        adjusted.exponentialScale = math.max(0.001f, math.csum(weightsVec * expScale));
+
+        return adjusted;
     }
 }

@@ -25,12 +25,18 @@ public struct TerrainGenerationSettings
     public float maxHeight;
     public Vector2 offset;
     public uint seed;
+    [Tooltip("Use FastNoiseSIMD-inspired sampler (Burst-friendly) for faster terrain noise.")]
+    public bool useFastNoiseSimd;
 
     [Header("Block Layers")]
     [Range(VoxelData.MinSoilDepth, VoxelData.MaxSoilDepth)] public int soilDepth;
     [Range(VoxelData.MinBedrockDepth, VoxelData.MaxBedrockDepth)] public int bedrockDepth;
     [Range(0f, 1f)] public float alpineNormalizedThreshold;
     [Range(0f, 1f)] public float steepRedistributionThreshold;
+    
+    [Header("Biomes")]
+    [Tooltip("Controls biome layout and per-biome shaping.")]
+    public BiomeSettings biomeSettings;
 
     public TerrainNoiseSettings ToNoiseSettings()
     {
@@ -53,8 +59,14 @@ public struct TerrainGenerationSettings
         noiseSettings.maxHeight = maxHeight;
         noiseSettings.offset = new float2(offset.x, offset.y);
         noiseSettings.seed = seed;
+        noiseSettings.useFastNoiseSimd = useFastNoiseSimd;
 
         return noiseSettings;
+    }
+
+    public BiomeNoiseSettings ToBiomeNoiseSettings()
+    {
+        return biomeSettings.ToNoiseSettings();
     }
 
     public static TerrainGenerationSettings CreateDefault()
@@ -78,10 +90,12 @@ public struct TerrainGenerationSettings
             maxHeight = TerrainNoiseSettings.Default.maxHeight,
             offset = Vector2.zero,
             seed = TerrainNoiseSettings.Default.seed,
+            useFastNoiseSimd = true,
             soilDepth = VoxelData.DefaultSoilDepth,
             bedrockDepth = VoxelData.DefaultBedrockDepth,
             alpineNormalizedThreshold = 0.72f,
-            steepRedistributionThreshold = 0.35f
+            steepRedistributionThreshold = 0.35f,
+            biomeSettings = BiomeSettings.CreateDefault()
         };
     }
 }
