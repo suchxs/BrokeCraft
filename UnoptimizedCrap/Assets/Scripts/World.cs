@@ -12,11 +12,11 @@ public class World : MonoBehaviour
 {
     private const int DefaultHorizontalViewDistance = 32; // diameter in chunks (balanced)
     private const int DefaultVerticalViewDistance = 16;  // diameter in chunks (balanced)
-    private const int DefaultMaxCreationsPerFrame = 48;
+    private const int DefaultMaxCreationsPerFrame = 12;
     private const int WarmupMultiplier = 2;
     private const int WarmupMaxHorizontalHalf = 12;
     private const int WarmupMaxVerticalHalf = 8;
-    private const int WarmupCreationBoost = 8;
+    private const int WarmupCreationBoost = 4;
 
     [Header("World Settings")]
     [Tooltip("Material to use for all chunks (assign your texture atlas material here)")]
@@ -87,6 +87,18 @@ public class World : MonoBehaviour
         {
             Debug.LogError("No chunk material assigned! Please assign a material with your texture atlas.");
         }
+        else
+        {
+            Shader vcShader = Shader.Find("Custom/ChunkVertexColor");
+            if (vcShader != null)
+            {
+                chunkMaterial.shader = vcShader;
+            }
+            else
+            {
+                Debug.LogWarning("Custom/ChunkVertexColor shader not found. Grass tinting requires vertex color support.");
+            }
+        }
 
         EnforceMinimumViewSettings();
 
@@ -135,16 +147,8 @@ public class World : MonoBehaviour
 
     private int DetermineLodStep(int3 centerChunkPos, int3 targetChunkPos)
     {
-        int3 delta = targetChunkPos - centerChunkPos;
-        int dist = math.max(math.abs(delta.x), math.max(math.abs(delta.y), math.abs(delta.z)));
-
-        int nearRadius = GetHorizontalRadius();
-        if (dist <= nearRadius)
-        {
-            return 1;
-        }
-
-        return 2;
+        // Disable LOD steps for now to avoid visual artifacts on terrain tops.
+        return 1;
     }
 
     private System.Collections.IEnumerator PrewarmAndGenerateWorld()
@@ -191,7 +195,6 @@ public class World : MonoBehaviour
         // Let the queue drain while updating progress
         while (chunkCreationQueue.Count > 0 || pendingChunkCreations.Count > 0)
         {
-            // Aggressively process to finish warmup before gameplay
             ProcessChunkCreationQueue(true);
 
             int loaded = chunks.Count;
@@ -429,7 +432,7 @@ public class World : MonoBehaviour
         chunkCreationQueue.Enqueue(chunkPosition);
     }
     
-    private void ProcessChunkCreationQueue(bool consumeAll)
+    private void ProcessChunkCreationQueue(bool warmup)
     {
         if (chunkCreationQueue.Count == 0)
         {
@@ -437,19 +440,9 @@ public class World : MonoBehaviour
         }
 
         int processed = 0;
-        int maxPerFrame;
-        if (consumeAll)
-        {
-            maxPerFrame = int.MaxValue;
-        }
-        else if (isPrewarming)
-        {
-            maxPerFrame = math.max(1, maxChunkCreationsPerFrame * WarmupCreationBoost);
-        }
-        else
-        {
-            maxPerFrame = math.max(1, maxChunkCreationsPerFrame);
-        }
+        int maxPerFrame = warmup
+            ? math.max(1, maxChunkCreationsPerFrame * WarmupCreationBoost)
+            : math.max(1, maxChunkCreationsPerFrame);
 
         while (processed < maxPerFrame && chunkCreationQueue.Count > 0)
         {

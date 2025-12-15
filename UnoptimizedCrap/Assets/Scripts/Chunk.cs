@@ -18,6 +18,7 @@ public class Chunk : MonoBehaviour
     // Column summary data for distant rendering
     private bool columnSummariesEnabled = false;
     private NativeArray<ChunkColumnSummary> columnSummaries;
+    private NativeArray<BiomeId> columnBiomes;
     private JobHandle columnSummaryJobHandle;
     private bool isColumnSummaryJobRunning = false;
     private bool columnSummaryReady = false;
@@ -131,6 +132,12 @@ public class Chunk : MonoBehaviour
         {
             columnSummaries.Dispose();
         }
+
+        if (!columnBiomes.IsCreated)
+        {
+            columnBiomes = new NativeArray<BiomeId>(VoxelData.ChunkWidth * VoxelData.ChunkDepth, Allocator.Persistent);
+        }
+
         columnSummaryReady = false;
         columnSummaryDirty = columnSummariesEnabled;
         
@@ -155,6 +162,7 @@ public class Chunk : MonoBehaviour
             ChunkPosition = ChunkPosition,
             NoiseSettings = settings.ToNoiseSettings(),
             BiomeSettings = settings.ToBiomeNoiseSettings(),
+            ColumnBiomes = columnBiomes,
             SoilDepth = math.clamp(settings.soilDepth, VoxelData.MinSoilDepth, VoxelData.MaxSoilDepth),
             BedrockDepth = math.clamp(settings.bedrockDepth, VoxelData.MinBedrockDepth, VoxelData.MaxBedrockDepth),
             AlpineNormalizedThreshold = math.clamp(settings.alpineNormalizedThreshold, 0f, 1f),
@@ -290,6 +298,7 @@ public class Chunk : MonoBehaviour
         var triangles = new NativeList<int>(Allocator.TempJob);
         var uvs = new NativeList<float2>(Allocator.TempJob);
         var normals = new NativeList<float3>(Allocator.TempJob);
+        var colors = new NativeList<float4>(Allocator.TempJob);
 
         // Include terrain job as dependency if still running
         JobHandle meshDependencies = terrainDataReady ? default : terrainJobHandle;
@@ -319,11 +328,13 @@ public class Chunk : MonoBehaviour
             Triangles = triangles,
             UVs = uvs,
             Normals = normals,
+            Colors = colors,
             VoxelVerticesBytes = voxelVerticesBytes,
             FaceChecksBytes = faceChecksBytes,
             VoxelTrianglesBytes = voxelTrianglesBytes,
             VoxelUVsBytes = voxelUVsBytes,
             FaceNormals = faceNormals,
+            ColumnBiomes = columnBiomes,
             NeighborBack = neighborBack,
             NeighborFront = neighborFront,
             NeighborTop = neighborTop,
@@ -337,6 +348,7 @@ public class Chunk : MonoBehaviour
         
         // Store references for completion (need to dispose neighbor arrays too)
         StartCoroutine(CompleteMeshGeneration(vertices, triangles, uvs, normals,
+            colors,
             neighborBack, neighborFront, neighborTop, neighborBottom, neighborLeft, neighborRight));
     }
     
@@ -389,6 +401,7 @@ public class Chunk : MonoBehaviour
         NativeList<int> triangles,
         NativeList<float2> uvs,
         NativeList<float3> normals,
+        NativeList<float4> colors,
         NativeArray<BlockType> neighborBack,
         NativeArray<BlockType> neighborFront,
         NativeArray<BlockType> neighborTop,
@@ -403,13 +416,14 @@ public class Chunk : MonoBehaviour
         isMeshJobRunning = false;
         
         // Apply mesh data
-        ApplyMeshData(vertices, triangles, uvs, normals);
+        ApplyMeshData(vertices, triangles, uvs, normals, colors);
         
         // Dispose mesh data native collections
         vertices.Dispose();
         triangles.Dispose();
         uvs.Dispose();
         normals.Dispose();
+        colors.Dispose();
         
         DisposeNeighborArray(neighborBack);
         DisposeNeighborArray(neighborFront);
@@ -426,7 +440,8 @@ public class Chunk : MonoBehaviour
         NativeList<float3> vertices,
         NativeList<int> triangles,
         NativeList<float2> uvs,
-        NativeList<float3> normals)
+        NativeList<float3> normals,
+        NativeList<float4> colors)
     {
         mesh.Clear();
         
@@ -435,12 +450,18 @@ public class Chunk : MonoBehaviour
         var uvArray = new Vector2[uvs.Length];
         var normalArray = new Vector3[normals.Length];
         var triangleArray = new int[triangles.Length];
+        var colorArray = new Color[colors.Length];
         
         for (int i = 0; i < vertices.Length; i++)
         {
             vertexArray[i] = vertices[i];
             uvArray[i] = uvs[i];
             normalArray[i] = normals[i];
+            if (i < colors.Length)
+            {
+                float4 c = colors[i];
+                colorArray[i] = new Color(c.x, c.y, c.z, c.w);
+            }
         }
         
         for (int i = 0; i < triangles.Length; i++)
@@ -452,6 +473,10 @@ public class Chunk : MonoBehaviour
         mesh.uv = uvArray;
         mesh.normals = normalArray;
         mesh.SetTriangles(triangleArray, 0);
+        if (colors.Length == vertices.Length)
+        {
+            mesh.colors = colorArray;
+        }
         
         // Recalculate bounds for culling
         mesh.RecalculateBounds();
@@ -670,6 +695,11 @@ public class Chunk : MonoBehaviour
         if (columnSummaries.IsCreated)
         {
             columnSummaries.Dispose();
+        }
+
+        if (columnBiomes.IsCreated)
+        {
+            columnBiomes.Dispose();
         }
     }
     

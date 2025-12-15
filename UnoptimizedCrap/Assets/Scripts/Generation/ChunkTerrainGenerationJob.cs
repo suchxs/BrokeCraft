@@ -10,6 +10,7 @@ using Unity.Mathematics;
 public struct ChunkTerrainGenerationJob : IJobFor
 {
     [NativeDisableParallelForRestriction] public NativeArray<BlockType> Blocks;
+    [WriteOnly] public NativeArray<BiomeId> ColumnBiomes;
     public int3 ChunkPosition;
     [ReadOnly] public TerrainNoiseSettings NoiseSettings;
     [ReadOnly] public BiomeNoiseSettings BiomeSettings;
@@ -43,6 +44,11 @@ public struct ChunkTerrainGenerationJob : IJobFor
         int chunkWorldYStart = ChunkPosition.y * chunkHeight;
         int blockIndex = x + chunkWidth * (chunkHeight * z);
         int worldY = chunkWorldYStart;
+
+        if (ColumnBiomes.IsCreated)
+        {
+            ColumnBiomes[columnIndex] = biomeWeights.Dominant;
+        }
 
         for (int y = 0; y < chunkHeight; y++)
         {

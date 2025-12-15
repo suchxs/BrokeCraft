@@ -756,7 +756,7 @@ public class DistantTerrainRenderer : MonoBehaviour
                     {
                         foundSurface = true;
                         aggregate.surfaceHeight = summary.surfaceWorldY;
-                        aggregate.surfaceTint = BlockVisuals.GetSurfaceTint(summary.surfaceBlock);
+                        aggregate.surfaceTint = BlockVisuals.GetSurfaceTint(summary.surfaceBlock, (BiomeId)summary.surfaceBiome);
                         aggregate.hasSurface = true;
                     }
                 }

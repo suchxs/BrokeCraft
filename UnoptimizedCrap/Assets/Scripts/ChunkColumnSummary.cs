@@ -18,6 +18,7 @@ public struct ChunkColumnSummary
     public int solidHeight;
     public BlockType surfaceBlock;
     public byte hasSurface;
+    public byte surfaceBiome;
 }
 
 /// <summary>
@@ -27,6 +28,7 @@ public struct ChunkColumnSummary
 public struct ChunkColumnSummaryJob : IJobParallelFor
 {
     [ReadOnly] public NativeArray<BlockType> Blocks;
+    [ReadOnly] public NativeArray<BiomeId> ColumnBiomes;
     public NativeArray<ChunkColumnSummary> Summaries;
     public int3 ChunkPosition;
 
@@ -75,7 +77,10 @@ public struct ChunkColumnSummaryJob : IJobParallelFor
             maxWorldSolidY = worldSurfaceY,
             solidHeight = hasSurface ? math.max(1, highestSolid - lowestSolid + 1) : 0,
             surfaceBlock = surfaceBlock,
-            hasSurface = hasSurface ? (byte)1 : (byte)0
+            hasSurface = hasSurface ? (byte)1 : (byte)0,
+            surfaceBiome = ColumnBiomes.IsCreated && index < ColumnBiomes.Length
+                ? (byte)ColumnBiomes[index]
+                : (byte)BiomeId.Plains
         };
     }
 }

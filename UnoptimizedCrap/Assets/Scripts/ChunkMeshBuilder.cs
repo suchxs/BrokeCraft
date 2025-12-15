@@ -33,6 +33,7 @@ public struct ChunkMeshBuilder : IJob
     public NativeList<int> Triangles;
     public NativeList<float2> UVs;
     public NativeList<float3> Normals;
+    public NativeList<float4> Colors;
     
     // Static lookup data as bytes for memory efficiency (copied from VoxelData)
     [ReadOnly] public NativeArray<byte3> VoxelVerticesBytes;
@@ -40,6 +41,7 @@ public struct ChunkMeshBuilder : IJob
     [ReadOnly] public NativeArray<byte> VoxelTrianglesBytes;
     [ReadOnly] public NativeArray<byte2> VoxelUVsBytes;
     [ReadOnly] public NativeArray<float3> FaceNormals; // Normals stay as float3 (need precision)
+    [ReadOnly] public NativeArray<BiomeId> ColumnBiomes;
     
     public void Execute()
     {
@@ -152,6 +154,7 @@ public struct ChunkMeshBuilder : IJob
         int vertexIndex = Vertices.Length;
         float scale = VoxelScale <= 0f ? 1f : VoxelScale;
         float3 blockPos = new float3(x, y, z) * scale;
+        float4 color = GetVertexColor(blockType, faceIndex, x, z);
         
         // Get the vertex indices for this face from lookup table
         int triOffset = faceIndex * VoxelData.VerticesPerFace;
@@ -176,6 +179,7 @@ public struct ChunkMeshBuilder : IJob
             
             // Add normal for this face
             Normals.Add(FaceNormals[faceIndex]);
+            Colors.Add(color);
         }
         
         // Add 2 triangles (6 indices) for this quad face
@@ -188,6 +192,26 @@ public struct ChunkMeshBuilder : IJob
         Triangles.Add(vertexIndex + 2);
         Triangles.Add(vertexIndex + 1);
         Triangles.Add(vertexIndex + 3);
+    }
+
+    private float4 GetVertexColor(BlockType blockType, int faceIndex, int x, int z)
+    {
+        if (blockType != BlockType.Grass || faceIndex != (int)VoxelData.Face.Top)
+        {
+            return new float4(1f, 1f, 1f, 1f);
+        }
+
+        BiomeId biome = BiomeId.Plains;
+        if (ColumnBiomes.IsCreated && ColumnBiomes.Length > 0)
+        {
+            int columnIndex = x + z * VoxelData.ChunkWidth;
+            if (columnIndex >= 0 && columnIndex < ColumnBiomes.Length)
+            {
+                biome = ColumnBiomes[columnIndex];
+            }
+        }
+
+        return BlockVisuals.GetSurfaceTint(BlockType.Grass, biome);
     }
     
     /// <summary>
