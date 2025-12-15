@@ -19,7 +19,7 @@ public class World : MonoBehaviour
     
     [Header("Cubic Chunks Configuration")]
     [Tooltip("Horizontal view distance in chunks (X/Z axes)")]
-    public int horizontalViewDistance = 4;
+    public int horizontalViewDistance = 12;
     
     [Tooltip("Vertical view distance in chunks (Y axis) - up and down")]
     public int verticalViewDistance = 4;
@@ -29,9 +29,10 @@ public class World : MonoBehaviour
     
     [Tooltip("Maximum number of new chunks to instantiate per frame when streaming.")]
     [Range(1, 32)]
-    public int maxChunkCreationsPerFrame = 6;
+    public int maxChunkCreationsPerFrame = 12;
 
     [Header("Distant Terrain")]
+    [SerializeField] private bool enableDistantTerrain = false;
     [Tooltip("Optional renderer that draws kilometre-scale horizon geometry. Will be created automatically if omitted.")]
     [SerializeField] private DistantTerrainRenderer distantTerrainRenderer;
     
@@ -53,6 +54,7 @@ public class World : MonoBehaviour
 
     public event Action<int3, NativeArray<ChunkColumnSummary>> ChunkColumnSummaryReady;
     public event Action<int3> ChunkColumnSummaryInvalidated;
+    public bool IsDistantTerrainEnabled => enableDistantTerrain;
     
     private void Start()
     {
@@ -73,7 +75,10 @@ public class World : MonoBehaviour
             GenerateWorld();
         }
 
-        InitializeDistantTerrain();
+        if (enableDistantTerrain)
+        {
+            InitializeDistantTerrain();
+        }
     }
     
     private void Update()
@@ -279,6 +284,11 @@ public class World : MonoBehaviour
     /// </summary>
     public void RegisterViewer(Transform viewerTransform)
     {
+        if (!enableDistantTerrain)
+        {
+            return;
+        }
+
         if (viewerTransform == null)
         {
             return;
@@ -363,6 +373,11 @@ public class World : MonoBehaviour
 
     internal void NotifyChunkColumnSummaryReady(int3 chunkPosition, NativeArray<ChunkColumnSummary> summaries)
     {
+        if (!enableDistantTerrain)
+        {
+            return;
+        }
+
         ChunkColumnSummaryReady?.Invoke(chunkPosition, summaries);
         if (distantTerrainRenderer != null)
         {
@@ -372,6 +387,11 @@ public class World : MonoBehaviour
 
     internal void NotifyChunkColumnSummaryInvalidated(int3 chunkPosition)
     {
+        if (!enableDistantTerrain)
+        {
+            return;
+        }
+
         ChunkColumnSummaryInvalidated?.Invoke(chunkPosition);
         if (distantTerrainRenderer != null)
         {

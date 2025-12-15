@@ -16,6 +16,7 @@ public class Chunk : MonoBehaviour
     private bool isBlocksAllocated = false;
     
     // Column summary data for distant rendering
+    private bool columnSummariesEnabled = false;
     private NativeArray<ChunkColumnSummary> columnSummaries;
     private JobHandle columnSummaryJobHandle;
     private bool isColumnSummaryJobRunning = false;
@@ -82,6 +83,7 @@ public class Chunk : MonoBehaviour
     {
         ChunkPosition = chunkPosition;
         world = worldRef;
+        columnSummariesEnabled = world != null && world.IsDistantTerrainEnabled;
         
         transform.position = new Vector3(
             chunkPosition.x * VoxelData.ChunkWidth,
@@ -101,12 +103,16 @@ public class Chunk : MonoBehaviour
             isBlocksAllocated = true;
         }
 
-        if (!columnSummaries.IsCreated)
+        if (columnSummariesEnabled && !columnSummaries.IsCreated)
         {
             columnSummaries = new NativeArray<ChunkColumnSummary>(VoxelData.ChunkWidth * VoxelData.ChunkDepth, Allocator.Persistent);
         }
+        else if (!columnSummariesEnabled && columnSummaries.IsCreated)
+        {
+            columnSummaries.Dispose();
+        }
         columnSummaryReady = false;
-        columnSummaryDirty = true;
+        columnSummaryDirty = columnSummariesEnabled;
         
         // Generate initial terrain data
         ScheduleTerrainGeneration();
@@ -153,7 +159,7 @@ public class Chunk : MonoBehaviour
 
     private void MarkColumnSummaryDirty()
     {
-        if (!columnSummaries.IsCreated)
+        if (!columnSummariesEnabled || !columnSummaries.IsCreated)
         {
             return;
         }
@@ -172,7 +178,7 @@ public class Chunk : MonoBehaviour
 
     private void ScheduleColumnSummaryJob()
     {
-        if (!terrainDataReady || !columnSummaries.IsCreated || isColumnSummaryJobRunning)
+        if (!columnSummariesEnabled || !terrainDataReady || !columnSummaries.IsCreated || isColumnSummaryJobRunning)
         {
             return;
         }
@@ -215,21 +221,24 @@ public class Chunk : MonoBehaviour
 
         if (terrainDataReady)
         {
-            if (columnSummaryDirty && !isColumnSummaryJobRunning)
+            if (columnSummariesEnabled)
             {
-                ScheduleColumnSummaryJob();
-            }
-
-            if (isColumnSummaryJobRunning && columnSummaryJobHandle.IsCompleted)
-            {
-                columnSummaryJobHandle.Complete();
-                isColumnSummaryJobRunning = false;
-                columnSummaryReady = true;
-                world?.NotifyChunkColumnSummaryReady(ChunkPosition, columnSummaries);
-
-                if (columnSummaryDirty)
+                if (columnSummaryDirty && !isColumnSummaryJobRunning)
                 {
                     ScheduleColumnSummaryJob();
+                }
+
+                if (isColumnSummaryJobRunning && columnSummaryJobHandle.IsCompleted)
+                {
+                    columnSummaryJobHandle.Complete();
+                    isColumnSummaryJobRunning = false;
+                    columnSummaryReady = true;
+                    world?.NotifyChunkColumnSummaryReady(ChunkPosition, columnSummaries);
+
+                    if (columnSummaryDirty)
+                    {
+                        ScheduleColumnSummaryJob();
+                    }
                 }
             }
         }
