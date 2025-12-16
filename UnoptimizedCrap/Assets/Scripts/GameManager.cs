@@ -23,6 +23,9 @@ public class GameManager : MonoBehaviour
 
     private IEnumerator Start()
     {
+        AppSettings.Load();
+        StartMusicLoop();
+
         if (world == null)
         {
             Debug.LogError("GameManager requires a World reference.");
@@ -208,5 +211,12 @@ public class GameManager : MonoBehaviour
 
         Debug.LogError($"GameManager timed out waiting for {stage}.");
         return true;
+    }
+
+    private void StartMusicLoop()
+    {
+        AudioClip clip = Resources.Load<AudioClip>("Music/Music");
+        float volume = AppSettings.AudioVolume;
+        PersistentMusicPlayer.EnsureExists(clip, volume);
     }
 }

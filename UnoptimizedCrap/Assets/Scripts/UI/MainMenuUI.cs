@@ -31,7 +31,6 @@ public class MainMenuUI : MonoBehaviour
 
     private Canvas canvas;
     private GameObject loadingOverlay;
-    private AudioSource audioSource;
     private GameObject buttonContainer;
     private GameObject titleObject;
     private GameObject settingsPanel;
@@ -310,10 +309,7 @@ public class MainMenuUI : MonoBehaviour
         volumeSlider.onValueChanged.AddListener(value =>
         {
             musicVolume = value;
-            if (audioSource != null)
-            {
-                audioSource.volume = musicVolume;
-            }
+            PersistentMusicPlayer.EnsureExists(musicClip, musicVolume);
             AppSettings.SetAudioVolume(musicVolume);
             AppSettings.Save();
         });
@@ -717,18 +713,12 @@ public class MainMenuUI : MonoBehaviour
             return;
         }
 
-        audioSource = gameObject.AddComponent<AudioSource>();
-        audioSource.clip = musicClip;
-        audioSource.loop = true;
-        audioSource.playOnAwake = false;
         if (AppSettings.AudioVolume > 0f)
         {
             musicVolume = AppSettings.AudioVolume;
         }
-        audioSource.volume = musicVolume;
-        audioSource.spatialBlend = 0f;
-        audioSource.priority = 0;
-        audioSource.Play();
+
+        PersistentMusicPlayer.EnsureExists(musicClip, musicVolume);
         AppSettings.SetAudioVolume(musicVolume);
     }
 }
