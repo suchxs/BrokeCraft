@@ -17,6 +17,9 @@ public static class BlockTextureData
     public const int TEX_GRASS_TOP = 446;
     public const int TEX_GRASS_SIDE = 443;
     public const int TEX_BEDROCK = 48;
+    private const int TEX_OAK_LOG = 619;
+    private const int TEX_OAK_LOG_TOP = 620;
+    private const int TEX_OAK_LEAVES = 618;
     
     /// <summary>
     /// Get texture atlas index for a block type and face.
@@ -49,6 +52,14 @@ public static class BlockTextureData
 
             case BlockType.Sand:
                 return TEX_SAND;
+
+            case BlockType.OakLog:
+                if (faceIndex == (int)VoxelData.Face.Top || faceIndex == (int)VoxelData.Face.Bottom)
+                    return TEX_OAK_LOG_TOP;
+                return TEX_OAK_LOG;
+
+            case BlockType.OakLeaves:
+                return TEX_OAK_LEAVES;
             
             default:
                 return TEX_STONE; // Fallback

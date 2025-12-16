@@ -196,11 +196,6 @@ public struct ChunkMeshBuilder : IJob
 
     private float4 GetVertexColor(BlockType blockType, int faceIndex, int x, int z)
     {
-        if (blockType != BlockType.Grass || faceIndex != (int)VoxelData.Face.Top)
-        {
-            return new float4(1f, 1f, 1f, 1f);
-        }
-
         BiomeId biome = BiomeId.Plains;
         if (ColumnBiomes.IsCreated && ColumnBiomes.Length > 0)
         {
@@ -211,7 +206,17 @@ public struct ChunkMeshBuilder : IJob
             }
         }
 
-        return BlockVisuals.GetSurfaceTint(BlockType.Grass, biome);
+        if (blockType == BlockType.Grass && faceIndex == (int)VoxelData.Face.Top)
+        {
+            return BlockVisuals.GetSurfaceTint(BlockType.Grass, biome);
+        }
+
+        if (blockType == BlockType.OakLeaves)
+        {
+            return BlockVisuals.GetSurfaceTint(BlockType.OakLeaves, biome);
+        }
+
+        return new float4(1f, 1f, 1f, 1f);
     }
     
     /// <summary>

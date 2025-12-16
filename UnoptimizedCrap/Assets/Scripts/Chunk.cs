@@ -37,6 +37,8 @@ public class Chunk : MonoBehaviour
     // Chunk position in world space (chunk coordinates, not block coordinates)
     public int3 ChunkPosition { get; private set; }
     public int LodStep { get; private set; } = 1;
+    private TerrainNoiseSettings lastTerrainNoiseSettings;
+    private BiomeNoiseSettings lastBiomeNoiseSettings;
     
     // Reference to world for querying neighboring chunks
     private World world;
@@ -155,13 +157,15 @@ public class Chunk : MonoBehaviour
         TerrainGenerationSettings settings = world != null 
             ? world.GetTerrainGenerationSettings()
             : TerrainGenerationSettings.CreateDefault();
+        lastTerrainNoiseSettings = settings.ToNoiseSettings();
+        lastBiomeNoiseSettings = settings.ToBiomeNoiseSettings();
 
         var job = new ChunkTerrainGenerationJob
         {
             Blocks = blocks,
             ChunkPosition = ChunkPosition,
-            NoiseSettings = settings.ToNoiseSettings(),
-            BiomeSettings = settings.ToBiomeNoiseSettings(),
+            NoiseSettings = lastTerrainNoiseSettings,
+            BiomeSettings = lastBiomeNoiseSettings,
             ColumnBiomes = columnBiomes,
             SoilDepth = math.clamp(settings.soilDepth, VoxelData.MinSoilDepth, VoxelData.MaxSoilDepth),
             BedrockDepth = math.clamp(settings.bedrockDepth, VoxelData.MinBedrockDepth, VoxelData.MaxBedrockDepth),
@@ -599,9 +603,31 @@ public class Chunk : MonoBehaviour
             terrainDataReady = true;
             terrainJobHandle = default;
 
+            RunTreePlacement();
+
             world?.NotifyNeighborsToRegenerate(ChunkPosition);
             MarkColumnSummaryDirty();
         }
+    }
+
+    private void RunTreePlacement()
+    {
+        if (!blocks.IsCreated)
+        {
+            return;
+        }
+
+        var treeJob = new TreePlacementJob
+        {
+            Blocks = blocks,
+            ChunkPosition = ChunkPosition,
+            NoiseSettings = lastTerrainNoiseSettings,
+            BiomeSettings = lastBiomeNoiseSettings,
+            TreeSpacing = 5,
+            Seed = 1337u
+        };
+
+        treeJob.Run();
     }
     
     /// <summary>

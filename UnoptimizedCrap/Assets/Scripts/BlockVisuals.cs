@@ -14,11 +14,14 @@ public static class BlockVisuals
         new float4(0.42f, 0.32f, 0.24f, 1f), // Dirt
         new float4(0.38f, 0.58f, 0.29f, 1f), // Grass (base, overridden by biome tint)
         new float4(0.15f, 0.13f, 0.18f, 1f), // Bedrock
-        new float4(0.86f, 0.82f, 0.65f, 1f)  // Sand
+        new float4(0.86f, 0.82f, 0.65f, 1f), // Sand
+        new float4(0.52f, 0.37f, 0.20f, 1f), // OakLog
+        new float4(0.435f, 0.624f, 0.02f, 1f)  // OakLeaves (#6F9F05)
     };
 
     private static readonly float4 plainsGrass = new float4(0.568f, 0.741f, 0.349f, 1f); // #91BD59
     private static readonly float4 mountainGrass = new float4(0.475f, 0.752f, 0.353f, 1f); // #79C05A
+    private static readonly float4 oakLeaves = new float4(0.435f, 0.624f, 0.02f, 1f); // #6F9F05
 
     /// <summary>
     /// Returns a simple RGBA tint for the given block type.
@@ -37,6 +40,11 @@ public static class BlockVisuals
 
     public static float4 GetSurfaceTint(BlockType blockType, BiomeId biome)
     {
+        if (blockType == BlockType.OakLeaves)
+        {
+            return oakLeaves;
+        }
+
         if (blockType == BlockType.Grass)
         {
             switch (biome)
