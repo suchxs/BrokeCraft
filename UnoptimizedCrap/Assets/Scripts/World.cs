@@ -11,8 +11,8 @@ using UnityEngine;
 public class World : MonoBehaviour
 {
     private const int DefaultHorizontalViewDistance = 32; // diameter in chunks (balanced)
-    private const int DefaultVerticalViewDistance = 16;  // diameter in chunks (balanced)
-    private const int DefaultMaxCreationsPerFrame = 12;
+    private const int DefaultVerticalViewDistance = 20;  // taller view for vertical visibility
+    private const int DefaultMaxCreationsPerFrame = 24;
     private const int WarmupMultiplier = 2;
     private const int WarmupMaxHorizontalHalf = 12;
     private const int WarmupMaxVerticalHalf = 8;
@@ -441,7 +441,7 @@ public class World : MonoBehaviour
 
         int processed = 0;
         int maxPerFrame = warmup
-            ? math.max(1, maxChunkCreationsPerFrame * WarmupCreationBoost)
+            ? math.max(1, chunkCreationQueue.Count) // aggressively drain during warmup for faster loads
             : math.max(1, maxChunkCreationsPerFrame);
 
         while (processed < maxPerFrame && chunkCreationQueue.Count > 0)

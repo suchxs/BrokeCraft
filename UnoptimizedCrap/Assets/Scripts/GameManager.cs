@@ -51,14 +51,6 @@ public class GameManager : MonoBehaviour
             yield return null;
         }
 
-        // Extra settle buffer to ensure streaming is idle
-        float settleTime = 5f;
-        while (settleTime > 0f)
-        {
-            settleTime -= Time.deltaTime;
-            yield return null;
-        }
-
         sampledSpawnHeight = SampleHeight(spawnWorldX, spawnWorldZ);
         int3 spawnChunk = new int3(
             (int)math.floor(spawnWorldX / (float)ChunkDimensions.x),
