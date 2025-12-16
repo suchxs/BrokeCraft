@@ -81,6 +81,7 @@ public class World : MonoBehaviour
 
         chunkPool = new ChunkPool(chunkPrefab, chunkMaterial, chunksParent);
         currentCenterChunk = worldOriginChunk;
+        AppSettings.Load();
 
         // Validate material
         if (chunkMaterial == null)
@@ -100,6 +101,7 @@ public class World : MonoBehaviour
             }
         }
 
+        AppSettings.ApplyToWorld(this);
         EnforceMinimumViewSettings();
 
         // Generate initial world (with optional overlay)
