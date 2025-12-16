@@ -282,7 +282,7 @@ public class MainMenuUI : MonoBehaviour
         txt.raycastTarget = false;
     }
 
-    private GameObject CreateSettingsPanel(Transform parent)
+    public GameObject CreateSettingsPanel(Transform parent)
     {
         var panel = new GameObject("SettingsPanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         panel.transform.SetParent(parent, false);
