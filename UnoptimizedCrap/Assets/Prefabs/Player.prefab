@@ -12,6 +12,9 @@ GameObject:
   - component: {fileID: 6724794766240731121}
   - component: {fileID: 4622102373901533098}
   - component: {fileID: -6424649533996757292}
+  - component: {fileID: 3000187940060949135}
+  - component: {fileID: -1049388870699557895}
+  - component: {fileID: 722058734566863038}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -109,6 +112,75 @@ MonoBehaviour:
   player: {fileID: 361135180112602991}
   textColor: {r: 1, g: 1, b: 1, a: 1}
   backgroundColor: {r: 0, g: 0, b: 0, a: 0.5}
+--- !u!114 &3000187940060949135
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7370902781878625683}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5d88051b86cd41059d0d8bad68a5756a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CrosshairUI
+  referenceResolution: {x: 1920, y: 1080}
+  crosshairSize: {x: 24, y: 24}
+  crosshairColor: {r: 1, g: 1, b: 1, a: 1}
+  resourcePath: UI/crosshair
+--- !u!114 &-1049388870699557895
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7370902781878625683}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0f48973e7f3b43b0b172036a285b3b56, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BlockInventory
+  showHotbar: 1
+  hotbarSlotSize: 60
+  hotbarPadding: 8
+  slotColor: {r: 0, g: 0, b: 0, a: 0.35}
+  selectedColor: {r: 1, g: 1, b: 1, a: 0.65}
+  textColor: {r: 1, g: 1, b: 1, a: 1}
+--- !u!114 &722058734566863038
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7370902781878625683}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f864c8cf58a44ecba19149984d884fef, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BlockBreaker
+  world: {fileID: 0}
+  highlighter: {fileID: 168973804927911526}
+  attackAction: {fileID: 0}
+--- !u!114 &168973804927911526
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8673510183976691635}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 81cff51657e84522b1a89909431f88b1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BlockHighlighter
+  world: {fileID: 0}
+  cameraTransform: {fileID: 0}
+  reachDistance: 4.5
+  outlineColor: {r: 1, g: 1, b: 1, a: 0.6}
+  outlinePadding: 0.0025
+  hitMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
 --- !u!1 &8673510183976691635
 GameObject:
   m_ObjectHideFlags: 0
@@ -122,6 +194,7 @@ GameObject:
   - component: {fileID: 8846459673548635185}
   - component: {fileID: 4382074191006799549}
   - component: {fileID: 3730728908545907408}
+  - component: {fileID: 168973804927911526}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera

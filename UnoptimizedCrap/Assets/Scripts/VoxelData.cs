@@ -39,7 +39,8 @@ public static class VoxelData
     public const float PlayerHeight = 1.8f;         // blocks
     public const float PlayerEyeHeight = 1.62f;     // blocks from ground
     public const float PlayerWidth = 0.6f;          // blocks
-    
+    public const float PlayerBlockReach = 4.5f;     // survival reach distance
+
     // CharacterController settings for precise Minecraft-like collision
     public const float PlayerSkinWidth = 0.04f;     // Small but safe skin to avoid tunnelling
     public const float PlayerMinMoveDistance = 0.001f;  // Allow micro-movements

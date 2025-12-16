@@ -38,9 +38,16 @@ public class GameManager : MonoBehaviour
         // Allow World.Start() to execute before we poll its data.
         yield return null;
 
+        float timeoutRemaining = readinessTimeoutSeconds;
+        bool useTimeout = readinessTimeoutSeconds > 0f;
+
         // Wait for world prewarm to finish
         while (!world.IsPrewarmComplete)
         {
+            if (useTimeout && HasTimedOut(ref timeoutRemaining, "world prewarm"))
+            {
+                yield break;
+            }
             yield return null;
         }
 
@@ -63,6 +70,10 @@ public class GameManager : MonoBehaviour
         // Wait for spawn area readiness with no early exit
         while (!IsSpawnAreaReady() || (world != null && !world.IsPrewarmComplete))
         {
+            if (useTimeout && HasTimedOut(ref timeoutRemaining, "spawn area readiness"))
+            {
+                yield break;
+            }
             yield return null;
         }
 
@@ -193,5 +204,17 @@ public class GameManager : MonoBehaviour
         adjusted.exponentialScale = math.max(0.001f, math.csum(weightsVec * expScale));
 
         return adjusted;
+    }
+
+    private static bool HasTimedOut(ref float timeoutRemaining, string stage)
+    {
+        timeoutRemaining -= Time.deltaTime;
+        if (timeoutRemaining > 0f)
+        {
+            return false;
+        }
+
+        Debug.LogError($"GameManager timed out waiting for {stage}.");
+        return true;
     }
 }
