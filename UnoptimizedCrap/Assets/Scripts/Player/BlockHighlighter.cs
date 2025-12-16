@@ -23,10 +23,18 @@ public class BlockHighlighter : MonoBehaviour
     private Material lineMaterial;
     private bool hasTarget;
     private int3 targetBlock;
+    private int3 targetNormal;
     
     public bool TryGetHighlightedBlock(out int3 blockPos)
     {
         blockPos = targetBlock;
+        return hasTarget;
+    }
+
+    public bool TryGetTarget(out int3 blockPos, out int3 normal)
+    {
+        blockPos = targetBlock;
+        normal = targetNormal;
         return hasTarget;
     }
     private void Awake()
@@ -118,6 +126,11 @@ public class BlockHighlighter : MonoBehaviour
         int y = Mathf.FloorToInt(adjusted.y);
         int z = Mathf.FloorToInt(adjusted.z);
         blockPos = new int3(x, y, z);
+        targetNormal = new int3(
+            Mathf.RoundToInt(bestHit.normal.x),
+            Mathf.RoundToInt(bestHit.normal.y),
+            Mathf.RoundToInt(bestHit.normal.z)
+        );
         return world.GetBlockAtPosition(blockPos) != BlockType.Air;
     }
 

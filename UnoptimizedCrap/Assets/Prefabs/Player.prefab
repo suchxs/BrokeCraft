@@ -15,6 +15,7 @@ GameObject:
   - component: {fileID: 3000187940060949135}
   - component: {fileID: -1049388870699557895}
   - component: {fileID: 722058734566863038}
+  - component: {fileID: 2838758755454441814}
   m_Layer: 0
   m_Name: Player
   m_TagString: Player
@@ -160,7 +161,28 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::BlockBreaker
   world: {fileID: 0}
   highlighter: {fileID: 168973804927911526}
+  inventory: {fileID: -1049388870699557895}
   attackAction: {fileID: 0}
+--- !u!114 &2838758755454441814
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7370902781878625683}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1334e47bb8d8431b80488b441c2e5479, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BlockPlacer
+  world: {fileID: 0}
+  highlighter: {fileID: 168973804927911526}
+  inventory: {fileID: -1049388870699557895}
+  placeAction: {fileID: 0}
+  collisionMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  boundsShrink: 0.05
 --- !u!114 &168973804927911526
 MonoBehaviour:
   m_ObjectHideFlags: 0
