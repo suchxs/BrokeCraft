@@ -20,8 +20,6 @@ A high-performance Minecraft-style voxel engine written in C# + Unity. This vers
 - Each vertical column loads or unloads based on the player’s height.
 
 ## Optimization 
-### Burst Compiler
-- All Code must be Burst-compatible instead of vanilla C#
 ### Occlusion Culling and LOD
 - LOD meshes are combined to reduce draw calls
 - Hidden chunks (behind terrain) are not rendered at all
@@ -37,7 +35,6 @@ A high-performance Minecraft-style voxel engine written in C# + Unity. This vers
 - Terrain height = exponential function of noise (for natural mountain ranges)
 ### Performance
 - Integrated FastNoiseSIMD, for fast multi-core noise evaluation
-- Parallelized across worker threads for near-instant chunk generation
 
 
   
