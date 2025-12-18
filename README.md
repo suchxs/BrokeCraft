@@ -45,4 +45,3 @@ A high-performance Minecraft-style voxel engine written in C# + Unity. This vers
 - https://www.youtube.com/watch?v=wbpMiKiSKm8
 - https://rtouti.github.io/graphics/perlin-noise-algorithm
 - https://minecraft.fandom.com/wiki/Noise_generator
-- https://booth.pm/en/items/3226395
